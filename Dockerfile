@@ -1,6 +1,9 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
+
+# Install OpenSSL and other dependencies
+RUN apt-get update && apt-get install -y openssl libssl-dev python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -18,11 +21,11 @@ COPY . .
 # Build backend
 RUN cd backend && npx prisma generate && npx tsc
 
-# Build frontend  
+# Build frontend
 RUN cd frontend && npm run build
 
 # Expose port
-EXPOSE 3001
+EXPOSE 10000
 
 # Start
 CMD ["node", "backend/dist/index.js"]
