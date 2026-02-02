@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "scripts": {
     "build": "cd frontend && npm install && npm run build",
-    "start": "cd backend && npm install && npx prisma generate && npm start"
+    "start": "cd backend && npm install && npx prisma generate && npm run build && npm start"
   }
 }
