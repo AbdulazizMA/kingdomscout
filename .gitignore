@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.next/
+out/
+*.log
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Database
+postgres-data/
+*.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Build
+build/
+dist/
+.vercel
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Scraper
+scraper.log
+scraper/*.log
+
+# Misc
+*.tgz
+*.tar.gz

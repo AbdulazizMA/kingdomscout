@@ -1,0 +1,303 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                     String            @id @default(uuid())
+  email                  String            @unique
+  passwordHash           String            @map("password_hash")
+  firstName              String            @map("first_name")
+  lastName               String            @map("last_name")
+  phone                  String?
+  avatarUrl              String?           @map("avatar_url")
+  preferredLanguage      String            @default("en") @map("preferred_language")
+  subscription_tier      String            @default("free")
+  subscriptionStatus     String            @default("inactive") @map("subscription_status")
+  subscriptionStartedAt  DateTime?         @map("subscription_started_at")
+  subscriptionEndsAt     DateTime?         @map("subscription_ends_at")
+  stripeCustomerId       String?           @map("stripe_customer_id")
+  stripeSubscriptionId   String?           @map("stripe_subscription_id")
+  emailNotifications     Boolean           @default(true) @map("email_notifications")
+  telegramNotifications  Boolean           @default(false) @map("telegram_notifications")
+  telegramChatId         String?           @map("telegram_chat_id")
+  whatsapp_notifications Boolean           @default(false)
+  whatsapp_number        String?
+  lastLoginAt            DateTime?         @map("last_login_at")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+  isAdmin                Boolean           @default(false) @map("is_admin")
+  isActive               Boolean           @default(true) @map("is_active")
+  activityLogs           ActivityLog[]
+  api_tokens             api_tokens[]
+  articles               articles[]
+  propertyComments       PropertyComment[]
+  savedSearches          SavedSearch[]
+  favorites              UserFavorite[]
+
+  @@map("users")
+}
+
+model City {
+  id          String       @id @default(dbgenerated("uuid_generate_v4()"))
+  nameEn      String       @map("name_en")
+  nameAr      String       @map("name_ar")
+  slug        String       @unique
+  region      String?
+  latitude    Decimal?
+  longitude   Decimal?
+  isActive    Boolean      @default(true) @map("is_active")
+  priority    Int          @default(0)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  districts   District[]
+  properties  Property[]
+  scraperJobs ScraperJob[]
+
+  @@map("cities")
+}
+
+model District {
+  id                 String     @id @default(dbgenerated("uuid_generate_v4()"))
+  cityId             String     @map("city_id")
+  nameEn             String     @map("name_en")
+  nameAr             String     @map("name_ar")
+  slug               String
+  latitude           Decimal?
+  longitude          Decimal?
+  avgPricePerSqm     Decimal?   @map("avg_price_per_sqm")
+  priceDataUpdatedAt DateTime?  @map("price_data_updated_at")
+  isActive           Boolean    @default(true) @map("is_active")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  city               City       @relation(fields: [cityId], references: [id])
+  properties         Property[]
+
+  @@unique([cityId, slug])
+  @@map("districts")
+}
+
+model PropertyType {
+  id           String       @id @default(dbgenerated("uuid_generate_v4()"))
+  nameEn       String       @map("name_en")
+  nameAr       String       @map("name_ar")
+  slug         String       @unique
+  displayOrder Int          @default(0) @map("display_order")
+  isActive     Boolean      @default(true) @map("is_active")
+  properties   Property[]
+  scraperJobs  ScraperJob[]
+
+  @@map("property_types")
+}
+
+model Property {
+  id                          String            @id @default(dbgenerated("uuid_generate_v4()"))
+  externalId                  String?           @unique @map("external_id")
+  sourceUrl                   String            @map("source_url")
+  cityId                      String?           @map("city_id")
+  districtId                  String?           @map("district_id")
+  fullAddress                 String?           @map("full_address")
+  latitude                    Decimal?
+  longitude                   Decimal?
+  propertyTypeId              String?           @map("property_type_id")
+  title                       String
+  description                 String?
+  price                       Decimal
+  sizeSqm                     Decimal?          @map("size_sqm")
+  bedrooms                    Int?
+  bathrooms                   Int?
+  floor                       Int?
+  buildingAgeYears            Int?              @map("building_age_years")
+  furnished                   Boolean?
+  pricePerSqm                 Decimal?          @map("price_per_sqm")
+  districtAvgPricePerSqm      Decimal?          @map("district_avg_price_per_sqm")
+  priceVsMarketPercent        Decimal?          @map("price_vs_market_percent")
+  investmentScore             Int?              @map("investment_score")
+  dealType                    String?           @map("deal_type")
+  estimatedMonthlyRent        Decimal?          @map("estimated_monthly_rent")
+  estimatedAnnualYieldPercent Decimal?          @map("estimated_annual_yield_percent")
+  mainImageUrl                String?           @map("main_image_url")
+  imageUrls                   String[]          @map("image_urls")
+  contactName                 String?           @map("contact_name")
+  contactPhone                String?           @map("contact_phone")
+  isVerifiedContact           Boolean           @default(false) @map("is_verified_contact")
+  status                      String            @default("active")
+  listedAt                    DateTime?         @map("listed_at")
+  scrapedAt                   DateTime          @default(now()) @map("scraped_at")
+  lastSeenAt                  DateTime          @default(now()) @map("last_seen_at")
+  updatedAt                   DateTime          @updatedAt @map("updated_at")
+  adminNotes                  String?           @map("admin_notes")
+  isFeatured                  Boolean           @default(false) @map("is_featured")
+  isVerified                  Boolean           @default(false) @map("is_verified")
+  viewCount                   Int               @default(0) @map("view_count")
+  priceHistory                PriceHistory[]
+  city                        City?             @relation(fields: [cityId], references: [id])
+  district                    District?         @relation(fields: [districtId], references: [id])
+  propertyType                PropertyType?     @relation(fields: [propertyTypeId], references: [id])
+  comments                    PropertyComment[]
+  searchAlerts                SearchAlert[]
+  favorites                   UserFavorite[]
+
+  @@index([cityId])
+  @@index([districtId])
+  @@index([propertyTypeId])
+  @@index([price])
+  @@index([investmentScore])
+  @@index([status])
+  @@index([dealType])
+  @@index([scrapedAt])
+  @@map("properties")
+}
+
+model PriceHistory {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()"))
+  propertyId  String   @map("property_id")
+  price       Decimal
+  pricePerSqm Decimal? @map("price_per_sqm")
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+  source      String?
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@map("price_history")
+}
+
+model UserFavorite {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  propertyId String   @map("property_id")
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("user_favorites")
+}
+
+model SavedSearch {
+  id              String        @id @default(uuid())
+  userId          String        @map("user_id")
+  name            String
+  filters         Json
+  emailAlerts     Boolean       @default(true) @map("email_alerts")
+  telegramAlerts  Boolean       @default(false) @map("telegram_alerts")
+  lastAlertSentAt DateTime?     @map("last_alert_sent_at")
+  newDealsCount   Int           @default(0) @map("new_deals_count")
+  isActive        Boolean       @default(true) @map("is_active")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  searchAlerts    SearchAlert[]
+
+  @@map("saved_searches")
+}
+
+model SearchAlert {
+  id            String      @id @default(uuid())
+  savedSearchId String      @map("saved_search_id")
+  propertyId    String      @map("property_id")
+  sentAt        DateTime    @default(now()) @map("sent_at")
+  openedAt      DateTime?   @map("opened_at")
+  property      Property    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  savedSearch   SavedSearch @relation(fields: [savedSearchId], references: [id], onDelete: Cascade)
+
+  @@map("search_alerts")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model ScraperJob {
+  id                String        @id @default(dbgenerated("uuid_generate_v4()"))
+  cityId            String?       @map("city_id")
+  propertyTypeId    String?       @map("property_type_id")
+  status            String
+  startedAt         DateTime      @default(now()) @map("started_at")
+  completedAt       DateTime?     @map("completed_at")
+  propertiesFound   Int           @default(0) @map("properties_found")
+  propertiesNew     Int           @default(0) @map("properties_new")
+  propertiesUpdated Int           @default(0) @map("properties_updated")
+  propertiesSold    Int           @default(0) @map("properties_sold")
+  errorMessage      String?       @map("error_message")
+  metadata          Json?
+  city              City?         @relation(fields: [cityId], references: [id])
+  propertyType      PropertyType? @relation(fields: [propertyTypeId], references: [id])
+
+  @@map("scraper_jobs")
+}
+
+model PropertyComment {
+  id         String   @id @default(uuid())
+  propertyId String   @map("property_id")
+  userId     String   @map("user_id")
+  comment    String
+  isInternal Boolean  @default(true) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("property_comments")
+}
+
+model api_logs {
+  id               String      @id
+  api_token_id     String?
+  user_id          String?
+  endpoint         String
+  method           String
+  ip_address       String?
+  response_status  Int?
+  response_time_ms Int?
+  created_at       DateTime    @default(now())
+  api_tokens       api_tokens? @relation(fields: [api_token_id], references: [id])
+}
+
+model api_tokens {
+  id            String     @id
+  user_id       String
+  token_hash    String     @unique
+  name          String?
+  last_used_at  DateTime?
+  expires_at    DateTime?
+  request_count Int        @default(0)
+  is_active     Boolean    @default(true)
+  created_at    DateTime   @default(now())
+  api_logs      api_logs[]
+  users         User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model articles {
+  id                 String    @id
+  title              String
+  slug               String    @unique
+  excerpt            String?
+  content            String
+  featured_image_url String?
+  author_id          String?
+  is_published       Boolean   @default(false)
+  published_at       DateTime?
+  view_count         Int       @default(0)
+  meta_title         String?
+  meta_description   String?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime
+  users              User?     @relation(fields: [author_id], references: [id])
+}
