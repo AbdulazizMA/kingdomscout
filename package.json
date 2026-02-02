@@ -1,17 +1,8 @@
 {
   "name": "kingdomscout",
   "version": "1.0.0",
-  "description": "KingdomScout - Saudi Real Estate Deal Finder",
   "scripts": {
-    "build": "cd frontend && npm run build",
-    "start": "cd backend && npm start",
-    "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm run dev\"",
-    "postinstall": "cd backend && npm install && cd ../frontend && npm install"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "concurrently": "^8.2.2"
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && npm install && npx prisma generate && npm start"
   }
 }

@@ -23,8 +23,8 @@ router.get('/stats', asyncHandler(async (req: Request, res: Response) => {
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.groupBy({
-      by: ['subscription_tier'],
-      _count: { subscription_tier: true }
+      by: ['subscriptionTier'],
+      _count: { subscriptionTier: true }
     }),
     prisma.property.count(),
     prisma.property.groupBy({
@@ -48,14 +48,14 @@ router.get('/stats', asyncHandler(async (req: Request, res: Response) => {
         email: true,
         firstName: true,
         lastName: true,
-        subscription_tier: true,
+        subscriptionTier: true,
         createdAt: true
       }
     })
   ]);
 
-  const premiumCount = usersByTier.find(u => u.subscription_tier === 'premium')?._count.subscription_tier || 0;
-  const proCount = usersByTier.find(u => u.subscription_tier === 'pro')?._count.subscription_tier || 0;
+  const premiumCount = usersByTier.find(u => u.subscriptionTier === 'premium')?._count?.subscriptionTier || 0;
+  const proCount = usersByTier.find(u => u.subscriptionTier === 'pro')?._count?.subscriptionTier || 0;
   const estimatedMRR = (premiumCount * 29) + (proCount * 99);
 
   res.json({
@@ -94,7 +94,7 @@ router.get('/users', asyncHandler(async (req: Request, res: Response) => {
   const skip = (pageNum - 1) * limitNum;
 
   const where: any = {};
-  if (tier) where.subscription_tier = tier;
+  if (tier) where.subscriptionTier = tier;
   if (status) where.subscriptionStatus = status;
   if (search) {
     where.OR = [
@@ -115,7 +115,7 @@ router.get('/users', asyncHandler(async (req: Request, res: Response) => {
         email: true,
         firstName: true,
         lastName: true,
-        subscription_tier: true,
+        subscriptionTier: true,
         subscriptionStatus: true,
         subscriptionEndsAt: true,
         isActive: true,
@@ -172,7 +172,7 @@ router.patch('/users/:id', asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   
   const schema = z.object({
-    subscription_tier: z.enum(['free', 'premium', 'pro']).optional(),
+    subscriptionTier: z.enum(['free', 'premium', 'pro']).optional(),
     subscriptionStatus: z.enum(['active', 'inactive', 'cancelled', 'past_due']).optional(),
     subscriptionEndsAt: z.string().datetime().optional(),
     isActive: z.boolean().optional(),
@@ -192,7 +192,7 @@ router.patch('/users/:id', asyncHandler(async (req: Request, res: Response) => {
     select: {
       id: true,
       email: true,
-      subscription_tier: true,
+      subscriptionTier: true,
       subscriptionStatus: true,
       isActive: true,
       isAdmin: true
