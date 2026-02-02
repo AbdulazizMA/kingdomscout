@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
-import rateLimit from 'express-rate-limit';
+// import rateLimit from 'express-rate-limit';
 import path from 'path';
 
 import { errorHandler } from './middleware/errorHandler';
@@ -26,20 +26,20 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: { error: 'Too many requests, please try again later.' }
-});
-app.use(limiter);
+// Rate limiting - disabled for free tier (shared IPs cause issues)
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 1000, // Increased for free tier
+//   message: { error: 'Too many requests, please try again later.' }
+// });
+// app.use(limiter);
 
-// Stricter rate limiting for auth
-const authLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10,
-  message: { error: 'Too many authentication attempts, please try again later.' }
-});
+// Rate limiting disabled for free tier
+// const authLimiter = rateLimit({
+//   windowMs: 60 * 60 * 1000, // 1 hour
+//   max: 100,
+//   message: { error: 'Too many authentication attempts, please try again later.' }
+// });
 
 // Logging
 app.use(morgan('combined'));
@@ -54,7 +54,7 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authLimiter, authRouter);
+app.use('/api/auth', authRouter);
 app.use('/api/properties', propertiesRouter);
 app.use('/api/user', userRouter);
 app.use('/api/admin', adminRouter);
