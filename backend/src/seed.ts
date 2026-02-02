@@ -17,7 +17,7 @@ async function main() {
       firstName: 'Admin',
       lastName: 'User',
       isAdmin: true,
-      subscriptionTier: 'pro',
+      subscription_tier: 'pro',
       subscriptionStatus: 'active',
     },
   });
@@ -33,7 +33,7 @@ async function main() {
       passwordHash: userPassword,
       firstName: 'Demo',
       lastName: 'User',
-      subscriptionTier: 'premium',
+      subscription_tier: 'premium',
       subscriptionStatus: 'active',
     },
   });
