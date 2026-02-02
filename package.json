@@ -2,7 +2,7 @@
   "name": "kingdomscout",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build",
-    "start": "cd backend && npm install && npx prisma generate && npm run build && npm start"
+    "build": "bash build.sh",
+    "start": "cd backend && node dist/index.js"
   }
 }
