@@ -2,7 +2,7 @@ services:
   - type: web
     name: kingdomscout
     runtime: node
-    repo: https://github.com/abdulazizma/kingdomscout
+    repo: https://github.com/AbdulazizMA/kingdomscout
     buildCommand: |
       echo "=== BUILD PHASE ==="
       cd backend && npm install && npx prisma generate && npm run build
