@@ -34,4 +34,6 @@ databases:
     databaseName: kingdomscout
     user: kingdomscout
 
+# Render configuration for KingdomScout
+# Updated: 2026-02-03
 version: "1"
