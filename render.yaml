@@ -12,7 +12,7 @@ services:
       npm run build
       echo "Building frontend..."
       cd ../frontend && npm install && npm run build
-    startCommand: cd backend && node dist/index.js
+    startCommand: cd backend && npx prisma db push --accept-data-loss && node dist/index.js
     envVars:
       - key: DATABASE_URL
         fromDatabase:
