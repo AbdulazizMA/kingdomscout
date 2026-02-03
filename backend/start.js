@@ -1,120 +1,189 @@
-const { execSync } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+#!/usr/bin/env node
 
 console.log('===================================');
-console.log('KingdomScout Startup');
+console.log('KingdomScout Startup Script v2');
 console.log('===================================');
+console.log('Timestamp:', new Date().toISOString());
 
 // Check environment
-console.log('\n[0/6] Environment check...');
-console.log('  DATABASE_URL:', process.env.DATABASE_URL ? 'Set (hidden)' : 'NOT SET');
-console.log('  NODE_ENV:', process.env.NODE_ENV || 'not set');
-console.log('  PORT:', process.env.PORT || 'not set');
+console.log('\n[ENV] Checking environment variables...');
+const requiredEnv = ['DATABASE_URL', 'PORT'];
+for (const env of requiredEnv) {
+  if (process.env[env]) {
+    console.log(`  ✓ ${env}: Set`);
+  } else {
+    console.log(`  ✗ ${env}: NOT SET`);
+  }
+}
 
-// Run Prisma generate
-console.log('\n[1/6] Generating Prisma client...');
+// Generate Prisma Client
+console.log('\n[1/4] Generating Prisma Client...');
 try {
-  execSync('npx prisma generate', { 
-    stdio: 'inherit',
-    cwd: path.join(__dirname)
-  });
-  console.log('✓ Prisma client generated');
+  const { execSync } = require('child_process');
+  execSync('npx prisma generate', { stdio: 'inherit' });
+  console.log('  ✓ Prisma Client generated successfully');
 } catch (e) {
-  console.error('✗ Prisma generate failed:', e.message);
+  console.error('  ✗ Failed to generate Prisma Client:', e.message);
   process.exit(1);
 }
 
-// Check if tables exist, if not run SQL init
-console.log('\n[2/6] Checking database tables...');
+// Create tables if they don't exist
+console.log('\n[2/4] Setting up database tables...');
 (async () => {
   try {
     const { PrismaClient } = require('@prisma/client');
     const prisma = new PrismaClient();
     
-    // Check if tables exist
-    const tables = await prisma.$queryRaw`
+    // Check existing tables
+    const existingTables = await prisma.$queryRaw`
       SELECT table_name 
       FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
+      WHERE table_schema = 'public'
     `;
     
-    console.log('  Tables found:', tables.length > 0 ? tables.map(r => r.table_name).join(', ') : 'None');
+    console.log(`  Found ${existingTables.length} existing tables`);
     
-    if (tables.length === 0) {
-      console.log('\n[3/6] No tables found! Running SQL init...');
-      try {
-        const sql = fs.readFileSync(path.join(__dirname, 'init-db.sql'), 'utf8');
-        // Split and execute statements
-        const statements = sql.split(';').filter(s => s.trim());
-        for (const statement of statements) {
-          if (statement.trim()) {
-            try {
-              await prisma.$executeRawUnsafe(statement + ';');
-            } catch (e) {
-              // Ignore errors for existing objects
-              console.log('  Note:', e.message.substring(0, 100));
-            }
+    if (existingTables.length === 0) {
+      console.log('  No tables found. Creating schema...');
+      
+      // Create tables using raw SQL
+      const createTablesSQL = `
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        
+        CREATE TABLE IF NOT EXISTS cities (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          name_en VARCHAR(255) NOT NULL,
+          name_ar VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) UNIQUE NOT NULL,
+          region VARCHAR(255),
+          is_active BOOLEAN DEFAULT true,
+          priority INTEGER DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE TABLE IF NOT EXISTS property_types (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          name_en VARCHAR(255) NOT NULL,
+          name_ar VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) UNIQUE NOT NULL,
+          display_order INTEGER DEFAULT 0,
+          is_active BOOLEAN DEFAULT true
+        );
+        
+        CREATE TABLE IF NOT EXISTS properties (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          external_id VARCHAR(255) UNIQUE,
+          source_url VARCHAR(255) NOT NULL,
+          city_id UUID REFERENCES cities(id),
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          price DECIMAL NOT NULL,
+          size_sqm DECIMAL,
+          bedrooms INTEGER,
+          bathrooms INTEGER,
+          price_per_sqm DECIMAL,
+          district_avg_price_per_sqm DECIMAL,
+          price_vs_market_percent DECIMAL,
+          investment_score INTEGER,
+          deal_type VARCHAR(255),
+          status VARCHAR(255) DEFAULT 'active',
+          scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          contact_name VARCHAR(255),
+          contact_phone VARCHAR(255),
+          is_verified BOOLEAN DEFAULT false,
+          view_count INTEGER DEFAULT 0
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_properties_city ON properties(city_id);
+        CREATE INDEX IF NOT EXISTS idx_properties_status ON properties(status);
+        CREATE INDEX IF NOT EXISTS idx_properties_deal ON properties(deal_type);
+      `;
+      
+      const statements = createTablesSQL.split(';').filter(s => s.trim());
+      for (const stmt of statements) {
+        try {
+          await prisma.$executeRawUnsafe(stmt + ';');
+        } catch (err) {
+          // Ignore "already exists" errors
+          if (!err.message.includes('already exists')) {
+            console.log('  Warning:', err.message.substring(0, 80));
           }
         }
-        console.log('✓ SQL init completed');
-      } catch (e) {
-        console.error('✗ SQL init failed:', e.message);
       }
+      
+      // Insert sample data
+      console.log('  Inserting sample data...');
+      await prisma.$executeRaw`
+        INSERT INTO cities (name_en, name_ar, slug, region, priority) 
+        VALUES 
+          ('Riyadh', 'الرياض', 'riyadh', 'Riyadh Region', 1),
+          ('Jeddah', 'جدة', 'jeddah', 'Makkah Region', 2),
+          ('Makkah', 'مكة المكرمة', 'makkah', 'Makkah Region', 3)
+        ON CONFLICT (slug) DO NOTHING
+      `;
+      
+      await prisma.$executeRaw`
+        INSERT INTO property_types (name_en, name_ar, slug, display_order) 
+        VALUES 
+          ('Apartment', 'شقة', 'apartment', 1),
+          ('Villa', 'فيلا', 'villa', 2),
+          ('Land', 'أرض', 'land', 3)
+        ON CONFLICT (slug) DO NOTHING
+      `;
+      
+      console.log('  ✓ Tables and sample data created');
     } else {
-      console.log('\n[3/6] Tables already exist, skipping SQL init');
+      console.log('  ✓ Tables already exist');
     }
     
-    await prisma.$disconnect();
-  } catch (e) {
-    console.error('  Could not check tables:', e.message);
-  }
-  
-  // Run db push as backup
-  console.log('\n[4/6] Running Prisma db push...');
-  try {
-    execSync('npx prisma db push --accept-data-loss --skip-generate', { 
-      stdio: 'inherit',
-      cwd: path.join(__dirname),
-      env: { ...process.env }
-    });
-    console.log('✓ Database schema synced');
-  } catch (e) {
-    console.error('✗ Db push failed:', e.message);
-  }
-  
-  // Final table check
-  console.log('\n[5/6] Final table verification...');
-  try {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    // Sync with Prisma schema (add any missing columns)
+    console.log('\n[3/4] Syncing with Prisma schema...');
+    try {
+      const { execSync } = require('child_process');
+      execSync('npx prisma db push --accept-data-loss --skip-generate', { 
+        stdio: 'inherit',
+        timeout: 120000
+      });
+      console.log('  ✓ Schema synced');
+    } catch (e) {
+      console.log('  Note: Schema sync had issues, continuing...');
+    }
     
-    const tables = await prisma.$queryRaw`
+    // Verify final state
+    console.log('\n[4/4] Verifying database...');
+    const finalTables = await prisma.$queryRaw`
       SELECT table_name 
       FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
     `;
+    console.log('  Tables:', finalTables.map(t => t.table_name).join(', '));
     
-    console.log('  Tables:', tables.map(r => r.table_name).join(', ') || 'None');
-    
-    // Try to get counts
     try {
-      const propertyCount = await prisma.property.count();
+      const propCount = await prisma.property.count();
       const cityCount = await prisma.city.count();
-      console.log(`  Properties: ${propertyCount}, Cities: ${cityCount}`);
+      console.log(`  Data: ${propCount} properties, ${cityCount} cities`);
     } catch (e) {
-      console.log('  Could not get counts:', e.message);
+      console.log('  Could not count records:', e.message);
     }
     
     await prisma.$disconnect();
-  } catch (e) {
-    console.error('  Verification failed:', e.message);
+    
+  } catch (error) {
+    console.error('  ✗ Database setup failed:', error.message);
+    console.error(error.stack);
   }
   
   // Start the server
-  console.log('\n[6/6] Starting server...');
+  console.log('\n===================================');
+  console.log('Starting KingdomScout Server...');
   console.log('===================================\n');
-  require('./dist/index.js');
+  
+  try {
+    require('./dist/index.js');
+  } catch (e) {
+    console.error('Failed to start server:', e.message);
+    process.exit(1);
+  }
 })();
