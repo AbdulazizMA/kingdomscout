@@ -43,7 +43,7 @@ model User {
 }
 
 model City {
-  id          String       @id @default(dbgenerated("uuid_generate_v4()"))
+  id          String       @id @default(uuid())
   nameEn      String       @map("name_en")
   nameAr      String       @map("name_ar")
   slug        String       @unique
@@ -61,7 +61,7 @@ model City {
 }
 
 model District {
-  id                 String     @id @default(dbgenerated("uuid_generate_v4()"))
+  id                 String     @id @default(uuid())
   cityId             String     @map("city_id")
   nameEn             String     @map("name_en")
   nameAr             String     @map("name_ar")
@@ -80,7 +80,7 @@ model District {
 }
 
 model PropertyType {
-  id           String       @id @default(dbgenerated("uuid_generate_v4()"))
+  id           String       @id @default(uuid())
   nameEn       String       @map("name_en")
   nameAr       String       @map("name_ar")
   slug         String       @unique
@@ -93,7 +93,7 @@ model PropertyType {
 }
 
 model Property {
-  id                          String            @id @default(dbgenerated("uuid_generate_v4()"))
+  id                          String            @id @default(uuid())
   externalId                  String?           @unique @map("external_id")
   sourceUrl                   String            @map("source_url")
   cityId                      String?           @map("city_id")
@@ -152,7 +152,7 @@ model Property {
 }
 
 model PriceHistory {
-  id          String   @id @default(dbgenerated("uuid_generate_v4()"))
+  id          String   @id @default(uuid())
   propertyId  String   @map("property_id")
   price       Decimal
   pricePerSqm Decimal? @map("price_per_sqm")
@@ -225,7 +225,7 @@ model ActivityLog {
 }
 
 model ScraperJob {
-  id                String        @id @default(dbgenerated("uuid_generate_v4()"))
+  id                String        @id @default(uuid())
   cityId            String?       @map("city_id")
   propertyTypeId    String?       @map("property_type_id")
   status            String

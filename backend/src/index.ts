@@ -13,6 +13,7 @@ import { userRouter } from './routes/user';
 import { adminRouter } from './routes/admin';
 import { subscriptionRouter } from './routes/subscription';
 import { webhookRouter } from './routes/webhooks';
+import { prisma } from './lib/prisma';
 
 dotenv.config();
 
@@ -49,8 +50,23 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ 
+      status: 'ok', 
+      database: 'connected',
+      timestamp: new Date().toISOString() 
+    });
+  } catch (error) {
+    console.error('Database health check failed:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      database: 'disconnected',
+      timestamp: new Date().toISOString() 
+    });
+  }
 });
 
 // API Routes

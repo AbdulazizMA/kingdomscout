@@ -61,8 +61,17 @@ export const errorHandler = (
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal server error';
 
+  // Log full error details for debugging
+  console.error('Full error details:', {
+    message: err.message,
+    stack: err.stack,
+    code: (err as any).code,
+    meta: (err as any).meta,
+  });
+
   res.status(statusCode).json({
     error: statusCode === 500 ? 'Internal server error' : message,
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };

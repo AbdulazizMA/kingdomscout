@@ -184,10 +184,13 @@ router.patch('/users/:id', asyncHandler(async (req: Request, res: Response) => {
   const user = await prisma.user.update({
     where: { id },
     data: {
-      ...data,
+      subscription_tier: data.subscription_tier,
+      subscriptionStatus: data.subscriptionStatus,
       subscriptionEndsAt: data.subscriptionEndsAt 
         ? new Date(data.subscriptionEndsAt) 
-        : undefined
+        : undefined,
+      isActive: data.isActive,
+      isAdmin: data.isAdmin
     },
     select: {
       id: true,
