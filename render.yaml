@@ -24,6 +24,8 @@ services:
         value: https://kingdomscout.onrender.com
       - key: NEXT_PUBLIC_API_URL
         value: https://kingdomscout.onrender.com
+      - key: DEPLOY_TIMESTAMP
+        value: "2026-02-03-123435"
 
 databases:
   - name: kingdomscout-db
