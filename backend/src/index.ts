@@ -54,9 +54,25 @@ app.get('/health', async (req, res) => {
   try {
     // Test database connection
     await prisma.$queryRaw`SELECT 1`;
+    
+    // Check tables
+    let tables = [];
+    try {
+      tables = await prisma.$queryRaw`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      `;
+    } catch (e) {
+      // Ignore
+    }
+    
     res.json({ 
       status: 'ok', 
       database: 'connected',
+      tables: tables.map(t => t.table_name),
+      tableCount: tables.length,
+      version: '2.0',
       timestamp: new Date().toISOString() 
     });
   } catch (error) {
