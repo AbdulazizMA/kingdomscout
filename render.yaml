@@ -4,7 +4,13 @@ services:
     runtime: node
     repo: https://github.com/abdulazizma/kingdomscout
     buildCommand: |
-      cd backend && npm install && npx prisma generate && npx prisma db push --accept-data-loss && npm run build && 
+      echo "Starting build process..."
+      cd backend && npm install && npx prisma generate
+      echo "Running prisma db push..."
+      npx prisma db push --accept-data-loss || echo "Db push failed but continuing..."
+      echo "Building backend..."
+      npm run build
+      echo "Building frontend..."
       cd ../frontend && npm install && npm run build
     startCommand: cd backend && node dist/index.js
     envVars:
