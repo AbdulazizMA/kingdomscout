@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 // import rateLimit from 'express-rate-limit';
 import path from 'path';
+import { execSync } from 'child_process';
 
 import { errorHandler } from './middleware/errorHandler';
 import { authRouter } from './routes/auth';
@@ -13,17 +14,52 @@ import { userRouter } from './routes/user';
 import { adminRouter } from './routes/admin';
 import { subscriptionRouter } from './routes/subscription';
 import { webhookRouter } from './routes/webhooks';
+import { imagesRouter } from './routes/images';
 import { prisma } from './lib/prisma';
 
 dotenv.config();
+
+// Run database schema push at startup (for production deployments)
+if (process.env.NODE_ENV === 'production') {
+  console.log('Running Prisma db push...');
+  try {
+    execSync('npx prisma db push --accept-data-loss', {
+      stdio: 'inherit',
+      cwd: path.join(__dirname, '..')
+    });
+    console.log('Database schema pushed successfully');
+  } catch (error) {
+    console.error('Failed to push database schema:', error);
+    // Continue anyway - tables might already exist
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Security middleware
 app.use(helmet());
+
+// CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:3000',
+  'http://localhost:3001',
+].filter(Boolean) as string[];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+
+    // Allow Railway domains
+    if (origin.endsWith('.railway.app')) return callback(null, true);
+
+    // Allow configured origins
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 
@@ -56,7 +92,7 @@ app.get('/health', async (req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     
     // Check tables
-    let tables = [];
+    let tables: any[] = [];
     try {
       tables = await prisma.$queryRaw`
         SELECT table_name 
@@ -85,12 +121,17 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Serve local images
+const publicPath = path.join(__dirname, '../public');
+app.use(express.static(publicPath));
+
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/properties', propertiesRouter);
 app.use('/api/user', userRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/subscription', subscriptionRouter);
+app.use('/api/images', imagesRouter);
 app.use('/webhooks', webhookRouter);
 
 // API documentation endpoint
@@ -111,17 +152,9 @@ app.get('/api', (req, res) => {
 // Error handling
 app.use(errorHandler);
 
-// Serve frontend static files
-const frontendPath = path.join(__dirname, '../../frontend/dist');
-app.use(express.static(frontendPath));
-
-// Serve index.html for all non-API routes (SPA support)
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api') && !req.path.startsWith('/webhooks')) {
-    res.sendFile(path.join(frontendPath, 'index.html'));
-  } else {
-    res.status(404).json({ error: 'Endpoint not found' });
-  }
+// Catch-all for undefined routes
+app.use('*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
 });
 
 app.listen(PORT, () => {
