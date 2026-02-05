@@ -5,19 +5,19 @@ WORKDIR /app
 # Install wget for health checks
 RUN apk add --no-cache wget
 
-# Install ALL dependencies (need typescript for build)
+# Install ALL dependencies including devDependencies (typescript needed for build)
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy prisma schema and generate client
 COPY prisma ./prisma/
 RUN npx prisma generate
 
-# Copy source and build
+# Copy source and build TypeScript
 COPY . .
-RUN npm run build
+RUN npx tsc
 
-# Remove dev dependencies after build
+# Remove dev dependencies after build to shrink image
 RUN npm prune --production
 
 # Create directories
