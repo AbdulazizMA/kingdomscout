@@ -24,7 +24,7 @@ export function Hero() {
           >
             <div className="inline-flex items-center px-4 py-2 bg-primary/10 text-primary rounded-full text-sm font-medium mb-6">
               <span className="flex h-2 w-2 bg-primary rounded-full ml-2"></span>
-              نغطي أكثر من 15 مدينة سعودية
+              نغطي أكثر من 20 مدينة سعودية
             </div>
 
             <h1 className="text-4xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">

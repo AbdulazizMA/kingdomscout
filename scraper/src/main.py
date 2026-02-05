@@ -3,310 +3,268 @@ import os
 import sys
 import time
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Any
 
-# Add src to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import settings, logger
-from scraper import AqarScraper
+from scraper import MultiSourceScraper
 from database import db_manager
 from notifications import NotificationManager
 
-# Major Saudi cities with their aqar.fm slugs
 SAUDI_CITIES = {
-    'الرياض': 'الرياض',
-    'جدة': 'جدة', 
-    'مكة': 'مكة',
-    'المدينة': 'المدينة',
-    'الدمام': 'الدمام',
-    'الخبر': 'الخبر',
-    'تبوك': 'تبوك',
-    'بريدة': 'بريدة',
-    'طائف': 'طائف',
-    'أبها': 'أبها',
-    'نجران': 'نجران',
-    'حائل': 'حائل',
-    'الجبيل': 'الجبيل',
-    'القطيف': 'القطيف',
-    'خميس-مشيط': 'خميس-مشيط'
+    'الرياض': {'en': 'Riyadh', 'slug': 'riyadh', 'region': 'Riyadh Region', 'priority': 1},
+    'جدة': {'en': 'Jeddah', 'slug': 'jeddah', 'region': 'Makkah Region', 'priority': 2},
+    'مكة': {'en': 'Makkah', 'slug': 'makkah', 'region': 'Makkah Region', 'priority': 3},
+    'المدينة': {'en': 'Madinah', 'slug': 'madinah', 'region': 'Madinah Region', 'priority': 4},
+    'الدمام': {'en': 'Dammam', 'slug': 'dammam', 'region': 'Eastern Province', 'priority': 5},
+    'الخبر': {'en': 'Khobar', 'slug': 'khobar', 'region': 'Eastern Province', 'priority': 6},
+    'تبوك': {'en': 'Tabuk', 'slug': 'tabuk', 'region': 'Tabuk Region', 'priority': 7},
+    'بريدة': {'en': 'Buraidah', 'slug': 'buraidah', 'region': 'Qassim Region', 'priority': 8},
+    'طائف': {'en': 'Taif', 'slug': 'taif', 'region': 'Makkah Region', 'priority': 9},
+    'أبها': {'en': 'Abha', 'slug': 'abha', 'region': 'Asir Region', 'priority': 10},
+    'نجران': {'en': 'Najran', 'slug': 'najran', 'region': 'Najran Region', 'priority': 11},
+    'حائل': {'en': 'Hail', 'slug': 'hail', 'region': 'Hail Region', 'priority': 12},
+    'الجبيل': {'en': 'Jubail', 'slug': 'jubail', 'region': 'Eastern Province', 'priority': 13},
+    'القطيف': {'en': 'Qatif', 'slug': 'qatif', 'region': 'Eastern Province', 'priority': 14},
+    'خميس-مشيط': {'en': 'Khamis Mushait', 'slug': 'khamis-mushait', 'region': 'Asir Region', 'priority': 15},
+    'ينبع': {'en': 'Yanbu', 'slug': 'yanbu', 'region': 'Madinah Region', 'priority': 16},
+    'الظهران': {'en': 'Dhahran', 'slug': 'dhahran', 'region': 'Eastern Province', 'priority': 17},
+    'الأحساء': {'en': 'Al Ahsa', 'slug': 'al-ahsa', 'region': 'Eastern Province', 'priority': 18},
+    'جازان': {'en': 'Jazan', 'slug': 'jazan', 'region': 'Jazan Region', 'priority': 19},
+    'الباحة': {'en': 'Al Baha', 'slug': 'al-baha', 'region': 'Al Baha Region', 'priority': 20},
 }
+
 
 class ScraperRunner:
     def __init__(self):
-        self.scraper = AqarScraper()
+        self.multi_scraper = MultiSourceScraper()
         self.notifier = NotificationManager()
         self.cities = SAUDI_CITIES
-    
-    def analyze_property(self, listing: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze a property to determine deal quality"""
+
+    def analyze_property(self, listing: Dict[str, Any], city_avg_price: float = None) -> Dict[str, Any]:
+        """Analyze a property using real market data when available"""
         analysis = {}
-        
         try:
             price = listing.get('price')
             size = listing.get('size_sqm')
-            
-            if price and size and size > 0:
-                price_per_sqm = price / size
+
+            if price and size and float(size) > 0:
+                price_per_sqm = float(price) / float(size)
                 analysis['price_per_sqm'] = price_per_sqm
-                
-                # Simple scoring based on price per sqm
-                # Lower price per sqm = better deal
-                # This is a simplified scoring - real implementation would use market data
-                
-                # Assume average market price is around 5000 SAR/sqm for apartments
-                # and 3500 SAR/sqm for villas (very rough estimates)
-                assumed_avg = 5000
-                
-                if price_per_sqm < assumed_avg * 0.7:
+
+                avg = city_avg_price or 5000
+                ratio = price_per_sqm / avg
+
+                if ratio < 0.70:
                     analysis['deal_type'] = 'hot_deal'
-                    analysis['investment_score'] = min(95, int(90 + (assumed_avg - price_per_sqm) / assumed_avg * 20))
-                    analysis['price_vs_market_percent'] = -int((assumed_avg - price_per_sqm) / assumed_avg * 100)
-                elif price_per_sqm < assumed_avg * 0.85:
+                    analysis['investment_score'] = min(95, int(85 + (1 - ratio) * 30))
+                elif ratio < 0.85:
                     analysis['deal_type'] = 'good_deal'
-                    analysis['investment_score'] = min(84, int(75 + (assumed_avg - price_per_sqm) / assumed_avg * 30))
-                    analysis['price_vs_market_percent'] = -int((assumed_avg - price_per_sqm) / assumed_avg * 100)
-                elif price_per_sqm < assumed_avg * 1.0:
+                    analysis['investment_score'] = min(84, int(65 + (1 - ratio) * 40))
+                elif ratio < 1.0:
                     analysis['deal_type'] = 'fair_price'
-                    analysis['investment_score'] = min(74, int(60 + (assumed_avg - price_per_sqm) / assumed_avg * 50))
-                    analysis['price_vs_market_percent'] = -int((assumed_avg - price_per_sqm) / assumed_avg * 100)
+                    analysis['investment_score'] = min(64, int(45 + (1 - ratio) * 80))
                 else:
                     analysis['deal_type'] = 'overpriced'
-                    analysis['investment_score'] = max(40, int(60 - (price_per_sqm - assumed_avg) / assumed_avg * 30))
-                    analysis['price_vs_market_percent'] = int((price_per_sqm - assumed_avg) / assumed_avg * 100)
-                
-                # Estimate monthly rent (very rough estimate - 4-6% annual yield)
-                annual_yield_rate = 0.05  # 5%
-                analysis['estimated_annual_yield_percent'] = annual_yield_rate * 100
-                analysis['estimated_monthly_rent'] = price * annual_yield_rate / 12
-                
+                    analysis['investment_score'] = max(20, int(50 - (ratio - 1) * 40))
+
+                analysis['price_vs_market_percent'] = round((ratio - 1) * 100, 1)
+                analysis['district_avg_price_per_sqm'] = avg
+
+                yield_rate = 0.055
+                analysis['estimated_annual_yield_percent'] = yield_rate * 100
+                analysis['estimated_monthly_rent'] = float(price) * yield_rate / 12
             else:
-                analysis['deal_type'] = 'unknown'
+                analysis['deal_type'] = 'fair_price'
                 analysis['investment_score'] = 50
-                
+
         except Exception as e:
             logger.error(f"Error analyzing property: {e}")
-            analysis['deal_type'] = 'unknown'
+            analysis['deal_type'] = 'fair_price'
             analysis['investment_score'] = 50
-        
+
         return analysis
-    
-    def process_listing(self, listing: Dict[str, Any], city_id: str) -> bool:
-        """Process a single listing - analyze and save to database"""
+
+    def process_listing(self, listing: Dict[str, Any], city_id: str, city_avg_price: float = None) -> bool:
         try:
-            # Add city_id
             listing['city_id'] = city_id
-            
-            # Try to get district_id if we have district info
+
+            if not listing.get('price'):
+                return False
+
             if listing.get('district'):
                 district_id = db_manager.get_or_create_district(city_id, listing['district'])
                 if district_id:
                     listing['district_id'] = district_id
-            
-            # Analyze the property
-            analysis = self.analyze_property(listing)
+
+            if listing.get('property_type'):
+                type_id = db_manager.get_or_create_property_type(listing['property_type'], listing['property_type'])
+                if type_id:
+                    listing['property_type_id'] = type_id
+
+            analysis = self.analyze_property(listing, city_avg_price)
             listing.update(analysis)
-            
-            # Save to database
+
             success, action = db_manager.save_property(listing)
-            
-            if success:
-                logger.info(f"Property {listing.get('external_id')}: {action}")
-            
             return success
-            
+
         except Exception as e:
             logger.error(f"Error processing listing {listing.get('external_id')}: {e}")
             return False
-    
-    def scrape_city(self, city_name: str, city_slug: str, max_pages: int = 3) -> Dict[str, Any]:
-        """Scrape all listings for a city and save to database"""
+
+    def scrape_city(self, city_ar: str, city_info: Dict, max_pages: int = 3) -> Dict[str, Any]:
         result = {
-            'city': city_name,
-            'found': 0,
-            'created': 0,
-            'updated': 0,
-            'errors': 0,
+            'city': city_ar, 'city_en': city_info['en'],
+            'found': 0, 'created': 0, 'updated': 0, 'errors': 0,
             'start_time': datetime.now(),
-            'end_time': None
         }
-        
+
         try:
-            logger.info(f"Starting scrape for {city_name}")
-            
-            # Get or create city
-            city_id = db_manager.get_or_create_city(city_name, city_slug)
+            logger.info(f"=== Scraping {city_info['en']} ({city_ar}) ===")
+
+            city_id = db_manager.get_or_create_city(
+                city_ar, city_info['slug'],
+                name_en=city_info['en'],
+                region=city_info.get('region'),
+                priority=city_info.get('priority', 0)
+            )
             if not city_id:
-                logger.error(f"Failed to get/create city: {city_name}")
                 result['errors'] += 1
                 return result
-            
-            # Scrape listings
-            listings = self.scraper.scrape_city(city_slug, max_pages=max_pages, scrape_details=True)
+
+            city_avg = db_manager.get_city_avg_price(city_id)
+
+            listings = self.multi_scraper.scrape_city(city_ar, max_pages=max_pages)
             result['found'] = len(listings)
-            
+
             if not listings:
-                logger.warning(f"No listings found for {city_name}")
                 db_manager.log_scraper_job(city_id, 'completed', 0, 0, 0)
                 return result
-            
-            # Process each listing
+
+            processed = 0
             for listing in listings:
                 try:
-                    success = self.process_listing(listing, city_id)
-                    if success:
-                        # Will be counted properly by save_property returning action
-                        pass
+                    if self.process_listing(listing, city_id, city_avg):
+                        processed += 1
+                    else:
+                        result['errors'] += 1
                 except Exception as e:
-                    logger.error(f"Error processing listing: {e}")
+                    logger.error(f"Error processing: {e}")
                     result['errors'] += 1
-            
-            # Get actual stats from database
-            result['end_time'] = datetime.now()
-            
-            # Log the job
+
+            result['created'] = processed
+
             db_manager.log_scraper_job(
-                city_id, 
+                city_id,
                 'completed' if result['errors'] == 0 else 'partial',
-                result['found'],
-                result['created'],
-                result['updated'],
-                None if result['errors'] == 0 else f"{result['errors']} errors occurred"
+                result['found'], processed, 0,
+                f"{result['errors']} errors" if result['errors'] > 0 else None
             )
-            
-            logger.info(
-                f"Completed scrape for {city_name}: "
-                f"{result['found']} found, {result['errors']} errors"
-            )
-            
+
+            logger.info(f"Done {city_info['en']}: {result['found']} found, {processed} saved, {result['errors']} errors")
+
         except Exception as e:
-            logger.error(f"Critical error scraping {city_name}: {e}")
+            logger.error(f"Critical error scraping {city_ar}: {e}")
             result['errors'] += 1
-            
-            # Try to log the error
-            try:
-                city_id = db_manager.get_or_create_city(city_name, city_slug)
-                if city_id:
-                    db_manager.log_scraper_job(city_id, 'failed', 0, 0, 0, str(e))
-            except:
-                pass
-        
+
         return result
-    
+
     def run_all_cities(self, max_pages: int = 2, specific_cities: List[str] = None) -> List[Dict[str, Any]]:
-        """Run scrape jobs for all cities or specific cities"""
         results = []
-        
+
         cities_to_scrape = {}
         if specific_cities:
             for city in specific_cities:
                 if city in self.cities:
                     cities_to_scrape[city] = self.cities[city]
-                else:
-                    logger.warning(f"Unknown city: {city}")
         else:
             cities_to_scrape = self.cities
-        
-        logger.info(f"Starting scrape for {len(cities_to_scrape)} cities")
-        
-        for city_name, city_slug in cities_to_scrape.items():
+
+        logger.info(f"Scraping {len(cities_to_scrape)} cities from {len(self.multi_scraper.scrapers)} sources")
+
+        for city_ar, city_info in cities_to_scrape.items():
             try:
-                result = self.scrape_city(city_name, city_slug, max_pages=max_pages)
+                result = self.scrape_city(city_ar, city_info, max_pages=max_pages)
                 results.append(result)
-                
-                # Wait between cities to be respectful
                 time.sleep(5)
-                
             except Exception as e:
-                logger.error(f"Critical error in scraper for {city_name}: {e}")
-                results.append({
-                    'city': city_name,
-                    'found': 0,
-                    'created': 0,
-                    'updated': 0,
-                    'errors': 1,
-                    'error_message': str(e)
-                })
-        
-        # Send summary notification
+                logger.error(f"Critical error for {city_ar}: {e}")
+                results.append({'city': city_ar, 'city_en': city_info['en'], 'found': 0, 'errors': 1})
+
+        try:
+            db_manager.update_district_averages()
+        except Exception as e:
+            logger.error(f"Error updating averages: {e}")
+
         try:
             self.notifier.send_scrape_summary(results)
         except Exception as e:
-            logger.error(f"Error sending scrape summary: {e}")
-        
+            logger.error(f"Error sending summary: {e}")
+
         return results
-    
+
     def run_continuous(self, interval_hours: int = 4):
-        """Run scraper continuously at specified intervals"""
         import schedule
-        
-        logger.info(f"Starting continuous scraper (interval: {interval_hours} hours)")
-        
-        # Run immediately on startup
+        logger.info(f"Starting continuous scraper (interval: {interval_hours}h)")
         self.run_all_cities()
-        
-        # Schedule regular runs
         schedule.every(interval_hours).hours.do(self.run_all_cities)
-        
-        logger.info("Scraper scheduler started")
-        
         while True:
             try:
                 schedule.run_pending()
-                time.sleep(60)  # Check every minute
+                time.sleep(60)
             except KeyboardInterrupt:
-                logger.info("Scraper stopped by user")
+                logger.info("Scraper stopped")
                 break
             except Exception as e:
-                logger.error(f"Error in scheduler: {e}")
+                logger.error(f"Scheduler error: {e}")
                 time.sleep(60)
 
 
 def main():
-    """Main entry point"""
-    parser = argparse.ArgumentParser(description='Saudi Property Scraper')
+    parser = argparse.ArgumentParser(description='KingdomScout Multi-Source Property Scraper')
     parser.add_argument('--once', action='store_true', help='Run once and exit')
-    parser.add_argument('--city', type=str, help='Scrape specific city')
-    parser.add_argument('--pages', type=int, default=2, help='Max pages per city')
+    parser.add_argument('--city', type=str, help='Scrape specific city (Arabic name)')
+    parser.add_argument('--pages', type=int, default=2, help='Max pages per city per source')
     parser.add_argument('--continuous', action='store_true', help='Run continuously')
-    parser.add_argument('--interval', type=int, default=4, help='Interval in hours for continuous mode')
-    
+    parser.add_argument('--interval', type=int, default=4, help='Hours between runs')
+
     args = parser.parse_args()
-    
+
     logger.info("=" * 60)
-    logger.info("KingdomScout Saudi Property Scraper Starting")
+    logger.info("KingdomScout Multi-Source Property Scraper")
+    logger.info(f"Sources: aqar.fm, bayut.sa, haraj.com.sa")
+    logger.info(f"Cities: {len(SAUDI_CITIES)}")
     logger.info("=" * 60)
-    
+
     runner = ScraperRunner()
-    
+
     if args.city:
-        # Scrape specific city
-        result = runner.scrape_city(args.city, args.city, max_pages=args.pages)
-        print(f"\nResults for {args.city}:")
-        print(f"  Found: {result['found']}")
-        print(f"  Errors: {result['errors']}")
+        if args.city in SAUDI_CITIES:
+            result = runner.scrape_city(args.city, SAUDI_CITIES[args.city], max_pages=args.pages)
+            print(f"\nResults for {args.city}: {result['found']} found, {result['errors']} errors")
+        else:
+            print(f"Unknown city: {args.city}")
+            print(f"Available: {', '.join(SAUDI_CITIES.keys())}")
     elif args.continuous:
-        # Run continuously
         runner.run_continuous(interval_hours=args.interval)
     else:
-        # Run once for all cities (or specific if provided)
-        cities = [args.city] if args.city else None
-        results = runner.run_all_cities(max_pages=args.pages, specific_cities=cities)
-        
-        # Print summary
+        results = runner.run_all_cities(max_pages=args.pages)
+
         print("\n" + "=" * 60)
         print("SCRAPE SUMMARY")
         print("=" * 60)
-        
+
         total_found = sum(r['found'] for r in results)
-        total_errors = sum(r['errors'] for r in results)
-        
+        total_errors = sum(r.get('errors', 0) for r in results)
+
         for r in results:
-            print(f"{r['city']}: {r['found']} found, {r['errors']} errors")
-        
+            status = "OK" if r.get('errors', 0) == 0 else "WARN"
+            print(f"  [{status}] {r.get('city_en', r['city'])}: {r['found']} found, {r.get('errors', 0)} errors")
+
         print("-" * 60)
-        print(f"Total: {total_found} found, {total_errors} errors")
+        print(f"  Total: {total_found} found, {total_errors} errors")
         print("=" * 60)
 
 

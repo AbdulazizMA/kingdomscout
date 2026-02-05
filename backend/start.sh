@@ -6,40 +6,35 @@ echo "KingdomScout Startup Script"
 echo "==================================="
 echo ""
 echo "Node version: $(node --version)"
-echo "NPM version: $(npm --version)"
 echo "Working directory: $(pwd)"
+echo "Contents: $(ls -la)"
 echo ""
 
-# Install prisma CLI if not available
-if ! command -v npx &> /dev/null; then
-    echo "ERROR: npx not found"
+# Find the dist directory
+if [ -d "dist" ]; then
+    DIST_DIR="dist"
+elif [ -d "backend/dist" ]; then
+    DIST_DIR="backend/dist"
+    cd backend
+else
+    echo "ERROR: Cannot find dist directory"
+    ls -la
     exit 1
 fi
 
+echo "Using dist directory: $DIST_DIR"
+
+echo ""
 echo "Step 1: Generating Prisma Client..."
-npx prisma generate
+npx prisma generate || echo "Prisma generate failed, continuing..."
 
 echo ""
 echo "Step 2: Pushing database schema..."
-npx prisma db push --accept-data-loss || {
-    echo "WARNING: Database push failed, but continuing..."
+npx prisma db push --skip-generate || {
+    echo "WARNING: Database push failed, tables may already exist. Continuing..."
 }
 
 echo ""
-echo "Step 3: Checking database connection..."
-node -e "
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-prisma.\$queryRaw\`SELECT 1\`.then(() => {
-    console.log('Database connection: OK');
-    process.exit(0);
-}).catch((e) => {
-    console.error('Database connection failed:', e.message);
-    process.exit(1);
-});
-"
-
-echo ""
-echo "Step 4: Starting server..."
+echo "Step 3: Starting server..."
 echo "==================================="
 node dist/index.js

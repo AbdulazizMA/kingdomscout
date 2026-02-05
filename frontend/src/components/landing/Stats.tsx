@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { TrendingUp, Users, Home, Clock } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export function Stats() {
   const { data: stats } = useQuery({
@@ -37,13 +37,13 @@ export function Stats() {
     },
     {
       icon: Users,
-      value: '15+',
+      value: stats ? `${stats.citiesCount}+` : '...',
       label: 'مدينة مغطاة',
       description: 'جميع المدن الرئيسية',
     },
     {
       icon: Clock,
-      value: '4 ساعات',
+      value: stats?.updateFrequency === '4 hours' ? '4 ساعات' : '4 ساعات',
       label: 'تردد التحديث',
       description: 'أسرع من المنافسين',
     },

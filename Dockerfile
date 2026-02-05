@@ -24,8 +24,13 @@ RUN cd backend && npx prisma generate && npx tsc
 # Build frontend
 RUN cd frontend && npm run build
 
-# Expose port
-EXPOSE 10000
+# Make start script executable
+RUN chmod +x backend/start.sh
 
-# Start
-CMD ["node", "backend/dist/index.js"]
+# Expose port
+EXPOSE 3001
+
+ENV NODE_ENV=production
+
+# Stay in /app (start.sh will navigate as needed)
+CMD ["/app/backend/start.sh"]

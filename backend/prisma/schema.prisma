@@ -120,6 +120,8 @@ model Property {
   estimatedAnnualYieldPercent Decimal?          @map("estimated_annual_yield_percent")
   mainImageUrl                String?           @map("main_image_url")
   imageUrls                   String[]          @map("image_urls")
+  localMainImageUrl           String?           @map("local_main_image_url")
+  localImageUrls              String[]          @map("local_image_urls")
   contactName                 String?           @map("contact_name")
   contactPhone                String?           @map("contact_phone")
   isVerifiedContact           Boolean           @default(false) @map("is_verified_contact")

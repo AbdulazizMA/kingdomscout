@@ -10,7 +10,11 @@ interface AuthRequest extends Request {
   };
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-key';
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 16)) {
+  console.error('FATAL: JWT_SECRET must be set to a strong value (16+ chars) in production');
+  process.exit(1);
+}
 
 export const authenticate = async (
   req: AuthRequest,

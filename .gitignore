@@ -8,6 +8,8 @@ out/
 .env
 .env.local
 .env.production
+*/.env
+*/.env.local
 
 # Database
 postgres-data/
@@ -20,6 +22,7 @@ venv/
 
 # OS
 .DS_Store
+._*
 Thumbs.db
 
 # IDE

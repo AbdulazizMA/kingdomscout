@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { ArrowLeft } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export function RecentDeals() {
   const { data } = useQuery({
@@ -29,9 +29,9 @@ export function RecentDeals() {
           <Link key={deal.id} href={`/deals/${deal.id}`}>
             <div className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition">
               <div className="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
-                {deal.main_image_url ? (
-                  <img 
-                    src={deal.main_image_url} 
+                {deal.mainImageUrl ? (
+                  <img
+                    src={deal.mainImageUrl}
                     alt={deal.title}
                     className="w-full h-full object-cover"
                   />
@@ -47,7 +47,7 @@ export function RecentDeals() {
               </div>
               <div className="text-left">
                 <p className="font-semibold">{(deal.price / 1000000).toFixed(1)}M</p>
-                <p className="text-xs text-green-600">تقييم: {deal.investment_score || 'N/A'}</p>
+                <p className="text-xs text-green-600">تقييم: {deal.investmentScore || 'N/A'}</p>
               </div>
             </div>
           </Link>

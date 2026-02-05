@@ -170,7 +170,94 @@ router.post('/debug/seed', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
-// Public: List properties (FREE - no subscription restrictions)
+// ==========================================
+// IMPORTANT: Static/meta routes MUST come before /:id
+// ==========================================
+
+// Cities list
+router.get('/meta/cities', asyncHandler(async (req: Request, res: Response) => {
+  const cities = await prisma.city.findMany({
+    where: { isActive: true },
+    orderBy: { priority: 'asc' },
+    select: { id: true, nameEn: true, nameAr: true, slug: true, region: true }
+  });
+  res.json({ cities });
+}));
+
+// Property types
+router.get('/meta/types', asyncHandler(async (req: Request, res: Response) => {
+  const types = await prisma.propertyType.findMany({
+    where: { isActive: true },
+    orderBy: { displayOrder: 'asc' },
+    select: { id: true, nameEn: true, nameAr: true, slug: true }
+  });
+  res.json({ types });
+}));
+
+// Stats for homepage
+router.get('/meta/stats', asyncHandler(async (req: Request, res: Response) => {
+  const [totalProperties, totalDeals, totalHotDeals, cityCount] = await Promise.all([
+    prisma.property.count({ where: { status: 'active' } }),
+    prisma.property.count({
+      where: { status: 'active', dealType: { in: ['hot_deal', 'good_deal'] } }
+    }),
+    prisma.property.count({
+      where: { status: 'active', dealType: 'hot_deal' }
+    }),
+    prisma.city.count({ where: { isActive: true } })
+  ]);
+
+  res.json({
+    totalProperties,
+    totalDeals,
+    totalHotDeals,
+    citiesCount: cityCount,
+    sources: ['aqar.fm', 'bayut.sa', 'haraj.com.sa'],
+    updateFrequency: '4 hours'
+  });
+}));
+
+// Districts by city
+router.get('/meta/districts/:citySlug', asyncHandler(async (req: Request, res: Response) => {
+  const { citySlug } = req.params;
+  const city = await prisma.city.findUnique({
+    where: { slug: citySlug },
+    include: {
+      districts: {
+        where: { isActive: true },
+        orderBy: { nameEn: 'asc' },
+        select: { id: true, nameEn: true, nameAr: true, slug: true, avgPricePerSqm: true }
+      }
+    }
+  });
+  if (!city) return res.status(404).json({ error: 'City not found' });
+  res.json({ districts: city.districts });
+}));
+
+// User favorites (must come before /:id)
+router.get('/user/favorites', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.id;
+  const favorites = await prisma.userFavorite.findMany({
+    where: { userId },
+    include: {
+      property: {
+        include: {
+          city: { select: { nameEn: true, nameAr: true, slug: true } },
+          district: { select: { nameEn: true, nameAr: true } },
+          propertyType: { select: { nameEn: true, nameAr: true } }
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json({ favorites });
+}));
+
+// ==========================================
+// Dynamic routes (/:id patterns) below
+// ==========================================
+
+// Public: List properties
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   console.log('GET /api/properties - received request');
   
@@ -315,26 +402,7 @@ router.post('/:id/favorite', authenticate, asyncHandler(async (req: AuthRequest,
   res.json({ favorited: true });
 }));
 
-// Protected: Get user's favorites
-router.get('/user/favorites', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
-  const userId = req.user!.id;
-
-  const favorites = await prisma.userFavorite.findMany({
-    where: { userId },
-    include: {
-      property: {
-        include: {
-          city: { select: { nameEn: true, nameAr: true, slug: true } },
-          district: { select: { nameEn: true, nameAr: true } },
-          propertyType: { select: { nameEn: true, nameAr: true } }
-        }
-      }
-    },
-    orderBy: { createdAt: 'desc' }
-  });
-
-  res.json({ favorites });
-}));
+// (favorites route moved above /:id to prevent route conflict)
 
 // Protected: Update favorite note
 router.patch('/:id/favorite', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -358,104 +426,14 @@ router.patch('/:id/favorite', authenticate, asyncHandler(async (req: AuthRequest
   res.json({ success: true });
 }));
 
-// Cities list
-router.get('/meta/cities', asyncHandler(async (req: Request, res: Response) => {
-  const cities = await prisma.city.findMany({
-    where: { isActive: true },
-    orderBy: { priority: 'asc' },
-    select: {
-      id: true,
-      nameEn: true,
-      nameAr: true,
-      slug: true,
-      region: true
-    }
-  });
-
-  res.json({ cities });
-}));
-
-// Property types
-router.get('/meta/types', asyncHandler(async (req: Request, res: Response) => {
-  const types = await prisma.propertyType.findMany({
-    where: { isActive: true },
-    orderBy: { displayOrder: 'asc' },
-    select: {
-      id: true,
-      nameEn: true,
-      nameAr: true,
-      slug: true
-    }
-  });
-
-  res.json({ types });
-}));
-
-// Districts by city
-router.get('/meta/districts/:citySlug', asyncHandler(async (req: Request, res: Response) => {
-  const { citySlug } = req.params;
-
-  const city = await prisma.city.findUnique({
-    where: { slug: citySlug },
-    include: {
-      districts: {
-        where: { isActive: true },
-        orderBy: { nameEn: 'asc' },
-        select: {
-          id: true,
-          nameEn: true,
-          nameAr: true,
-          slug: true,
-          avgPricePerSqm: true
-        }
-      }
-    }
-  });
-
-  if (!city) {
-    return res.status(404).json({ error: 'City not found' });
-  }
-
-  res.json({ districts: city.districts });
-}));
-
-// Get price history for a property (FREE)
+// Price history for a property
 router.get('/:id/price-history', asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-
   const priceHistory = await prisma.priceHistory.findMany({
     where: { propertyId: id },
     orderBy: { recordedAt: 'asc' }
   });
-
   res.json({ priceHistory });
-}));
-
-// Public: Get stats for homepage
-router.get('/meta/stats', asyncHandler(async (req: Request, res: Response) => {
-  const [totalProperties, totalDeals, totalHotDeals] = await Promise.all([
-    prisma.property.count({ where: { status: 'active' } }),
-    prisma.property.count({ 
-      where: { 
-        status: 'active',
-        dealType: { in: ['hot_deal', 'good_deal'] }
-      } 
-    }),
-    prisma.property.count({
-      where: {
-        status: 'active',
-        dealType: 'hot_deal'
-      }
-    })
-  ]);
-
-  res.json({
-    totalProperties,
-    totalDeals,
-    totalHotDeals,
-    citiesCount: 15,
-    updateFrequency: '4 hours'
-  });
 }));
 
 export { router as propertiesRouter };
