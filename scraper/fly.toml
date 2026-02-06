@@ -1,0 +1,17 @@
+app = "kingdomscout-scraper"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LOG_LEVEL = "INFO"
+  SCRAPE_INTERVAL_HOURS = "4"
+
+[processes]
+  worker = "python src/main.py --continuous --interval 4"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

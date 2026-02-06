@@ -9,8 +9,7 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.bayut.sa' },
       { protocol: 'https', hostname: '**.bayut.com' },
       { protocol: 'https', hostname: '**.haraj.com.sa' },
-      { protocol: 'https', hostname: '**.railway.app' },
-      { protocol: 'https', hostname: '**.onrender.com' },
+      { protocol: 'https', hostname: '**.fly.dev' },
     ],
   },
 };

@@ -71,8 +71,7 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (origin.endsWith('.railway.app')) return callback(null, true);
-    if (origin.endsWith('.onrender.com')) return callback(null, true);
+    if (origin.endsWith('.fly.dev')) return callback(null, true);
     if (origin.endsWith('.vercel.app')) return callback(null, true);
     if (origin.endsWith('.netlify.app')) return callback(null, true);
     if (allowedOrigins.some(o => origin === o)) return callback(null, true);
