@@ -52,7 +52,7 @@ async function initDatabase() {
 initDatabase().catch(console.error);
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 // Security
 app.use(helmet({
