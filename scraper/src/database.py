@@ -89,7 +89,15 @@ class DatabaseManager:
                 present_fields.append('updated_at')
 
                 placeholders = ['gen_random_uuid()'] + ['%s'] * (len(present_fields) - 2) + ['NOW()']
-                values = [listing[f] for f in present_fields if f not in ('id', 'updated_at')]
+                raw_values = [listing[f] for f in present_fields if f not in ('id', 'updated_at')]
+
+                # Coerce types for PostgreSQL compatibility
+                bool_fields = {'furnished'}
+                values = []
+                for f, v in zip([f for f in present_fields if f not in ('id', 'updated_at')], raw_values):
+                    if f in bool_fields and not isinstance(v, bool):
+                        v = bool(v)
+                    values.append(v)
 
                 sql = f"""
                     INSERT INTO properties ({', '.join(present_fields)})

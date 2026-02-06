@@ -189,9 +189,9 @@ class AqarScraper(BaseScraper):
                 'contact_name': contact_name,
                 'contact_phone': contact_phone,
                 'property_type': self._detect_property_type(title),
-                'floor': data.get('floor'),
+                'floor': data.get('fl', data.get('floor')),
                 'building_age_years': data.get('age'),
-                'furnished': data.get('furnished', False),
+                'furnished': bool(data.get('furnished')) if data.get('furnished') is not None else None,
                 'scraped_at': datetime.now(),
             }
         except Exception as e:
