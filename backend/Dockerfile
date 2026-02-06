@@ -1,8 +1,8 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache wget
+RUN apt-get update && apt-get install -y --no-install-recommends wget openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm install --include=dev
