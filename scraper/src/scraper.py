@@ -100,29 +100,34 @@ class AqarScraper(BaseScraper):
     def _extract_page_data(self, html: str) -> Optional[Dict]:
         """Extract structured data from page HTML (__APOLLO_STATE__ or __NEXT_DATA__)"""
         try:
-            # Pattern 1: __APOLLO_STATE__
+            # Pattern 1: __APOLLO_STATE__ as global var
             match = re.search(r'__APOLLO_STATE__\s*=\s*({.*?});?\s*</script>', html, re.DOTALL)
             if match:
                 return json.loads(match.group(1))
 
-            # Pattern 2: __NEXT_DATA__ inline
-            match2 = re.search(r'__NEXT_DATA__\s*=\s*({.*?})\s*</script>', html, re.DOTALL)
-            if match2:
-                next_data = json.loads(match2.group(1))
+            # Helper to extract apollo state from __NEXT_DATA__
+            def _extract_from_next_data(next_data):
+                # Check props.apolloState (older format)
                 apollo = next_data.get('props', {}).get('apolloState', {})
                 if apollo:
                     return apollo
-                return next_data.get('props', {}).get('pageProps', {})
+                # Check props.pageProps.__APOLLO_STATE__ (current format)
+                page_props = next_data.get('props', {}).get('pageProps', {})
+                apollo2 = page_props.get('__APOLLO_STATE__', {})
+                if apollo2:
+                    return apollo2
+                return page_props or None
+
+            # Pattern 2: __NEXT_DATA__ inline
+            match2 = re.search(r'__NEXT_DATA__\s*=\s*({.*?})\s*</script>', html, re.DOTALL)
+            if match2:
+                return _extract_from_next_data(json.loads(match2.group(1)))
 
             # Pattern 3: script tag with id
             soup = BeautifulSoup(html, 'html.parser')
             script = soup.find('script', id='__NEXT_DATA__')
             if script and script.string:
-                next_data = json.loads(script.string)
-                apollo = next_data.get('props', {}).get('apolloState', {})
-                if apollo:
-                    return apollo
-                return next_data.get('props', {}).get('pageProps', {})
+                return _extract_from_next_data(json.loads(script.string))
 
             return None
         except (json.JSONDecodeError, AttributeError) as e:
@@ -159,8 +164,8 @@ class AqarScraper(BaseScraper):
             lat = location.get('lat') if isinstance(location, dict) else None
             lng = location.get('lng') if isinstance(location, dict) else None
 
-            slug = data.get('slug', '')
-            source_url = f"{self.base_url}/{slug}" if slug else f"{self.base_url}/listing/{listing_id}"
+            path = data.get('path', data.get('slug', ''))
+            source_url = f"{self.base_url}{path}" if path else f"{self.base_url}/listing/{listing_id}"
 
             title = data.get('title', 'No Title')
 
