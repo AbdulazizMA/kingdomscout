@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations, useLocale } from 'next-intl';
 import axios from 'axios';
 import Link from 'next/link';
 import { Navbar } from '@/components/layout/Navbar';
@@ -9,8 +11,8 @@ import { Footer } from '@/components/layout/Footer';
 import { Button } from '@/components/ui/Button';
 import {
   MapPin, Bed, Bath, Maximize, Calendar, TrendingDown,
-  ArrowLeft, ExternalLink, Phone, Heart, Share2, Building2,
-  Check, AlertCircle
+  ArrowLeft, ExternalLink, Phone, Share2, Building2,
+  Check, AlertCircle, CheckCircle
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -52,6 +54,11 @@ export default function PropertyDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const t = useTranslations('propertyDetail');
+  const td = useTranslations('dealCard');
+  const locale = useLocale();
 
   const { data: property, isLoading, error } = useQuery<Property>({
     queryKey: ['property', id],
@@ -69,11 +76,33 @@ export default function PropertyDetailPage() {
   const getDealBadge = (dealType?: string) => {
     switch (dealType) {
       case 'hot_deal':
-        return { text: 'Hot Deal', className: 'bg-red-500' };
+        return { text: td('hotDeal'), className: 'bg-red-500' };
       case 'good_deal':
-        return { text: 'Good Deal', className: 'bg-orange-500' };
+        return { text: td('goodDeal'), className: 'bg-orange-500' };
+      case 'overpriced':
+        return { text: td('overpriced'), className: 'bg-gray-500' };
       default:
-        return { text: 'Fair Price', className: 'bg-blue-500' };
+        return { text: td('fairPrice'), className: 'bg-blue-500' };
+    }
+  };
+
+  const getName = (obj?: { nameEn: string; nameAr?: string }) => {
+    if (!obj) return '';
+    return locale === 'ar' ? (obj.nameAr || obj.nameEn) : obj.nameEn;
+  };
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: property?.title, url });
+      } catch {
+        // User cancelled share
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -84,12 +113,17 @@ export default function PropertyDetailPage() {
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="animate-pulse">
             <div className="h-8 w-32 bg-gray-200 rounded mb-8" />
-            <div className="grid md:grid-cols-2 gap-8">
-              <div className="aspect-[4/3] bg-gray-200 rounded-xl" />
-              <div className="space-y-4">
-                <div className="h-8 bg-gray-200 rounded w-3/4" />
-                <div className="h-6 bg-gray-200 rounded w-1/2" />
-                <div className="h-12 bg-gray-200 rounded w-1/3" />
+            <div className="grid lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-6">
+                <div className="aspect-[16/9] bg-gray-200 rounded-xl" />
+                <div className="bg-white rounded-xl border p-6 space-y-4">
+                  <div className="h-8 bg-gray-200 rounded w-3/4" />
+                  <div className="h-6 bg-gray-200 rounded w-1/2" />
+                  <div className="h-12 bg-gray-200 rounded w-1/3" />
+                </div>
+              </div>
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl border p-6 h-64" />
               </div>
             </div>
           </div>
@@ -106,10 +140,10 @@ export default function PropertyDetailPage() {
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="text-center py-16">
             <AlertCircle className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Property Not Found</h1>
-            <p className="text-gray-600 mb-8">The property you're looking for doesn't exist or has been removed.</p>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('notFound')}</h1>
+            <p className="text-gray-600 mb-8">{t('notFoundMsg')}</p>
             <Link href="/deals">
-              <Button>Browse All Properties</Button>
+              <Button>{t('browseAll')}</Button>
             </Link>
           </div>
         </div>
@@ -123,69 +157,92 @@ export default function PropertyDetailPage() {
     ? Math.abs(property.priceVsMarketPercent)
     : 0;
 
+  const allImages = [
+    ...(property.mainImageUrl ? [property.mainImageUrl] : []),
+    ...(property.imageUrls || []).filter(u => u !== property.mainImageUrl),
+  ];
+  const currentImage = allImages[selectedImageIndex] || null;
+  const locationText = [getName(property.district), getName(property.city)].filter(Boolean).join(', ');
+  const sar = locale === 'ar' ? 'ر.س' : 'SAR';
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back button */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 text-sm"
         >
-          <ArrowLeft className="w-5 h-5" />
-          Back to listings
+          <ArrowLeft className="w-4 h-4" />
+          {t('backToListings')}
         </button>
 
-        <div className="grid lg:grid-cols-3 gap-8">
+        <div className="grid lg:grid-cols-3 gap-6">
           {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-5">
             {/* Image Gallery */}
             <div className="bg-white rounded-xl overflow-hidden border">
-              <div className="relative aspect-[16/9]">
-                {property.mainImageUrl ? (
+              <div className="relative aspect-[16/9] bg-gray-100">
+                {currentImage ? (
                   <img
-                    src={property.mainImageUrl}
+                    src={currentImage}
                     alt={property.title}
-                    className="w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
-                    <Building2 className="w-24 h-24 text-gray-400" />
+                  <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex flex-col items-center justify-center gap-2">
+                    <Building2 className="w-20 h-20 text-gray-300" />
+                    <span className="text-gray-400">{t('noImageAvailable')}</span>
                   </div>
                 )}
 
-                {/* Badges */}
-                <div className="absolute top-4 left-4 flex gap-2">
-                  <span className={`${badge.className} text-white text-sm font-bold px-4 py-2 rounded-full`}>
+                <div className="absolute top-4 start-4 flex gap-2">
+                  <span className={`${badge.className} text-white text-sm font-bold px-4 py-1.5 rounded-full shadow`}>
                     {badge.text}
                   </span>
                   {discount > 0 && (
-                    <span className="bg-green-500 text-white text-sm font-bold px-4 py-2 rounded-full flex items-center gap-1">
+                    <span className="bg-green-500 text-white text-sm font-bold px-4 py-1.5 rounded-full flex items-center gap-1 shadow">
                       <TrendingDown className="w-4 h-4" />
-                      {discount.toFixed(0)}% Below Market
+                      {discount.toFixed(0)}% {t('belowMarket')}
                     </span>
                   )}
                 </div>
 
-                {property.investmentScore && (
-                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur text-gray-900 font-bold px-4 py-2 rounded-full">
-                    Investment Score: {property.investmentScore}/100
+                {property.investmentScore != null && property.investmentScore > 0 && (
+                  <div className={`absolute top-4 end-4 backdrop-blur font-bold px-4 py-1.5 rounded-full shadow ${
+                    property.investmentScore >= 80 ? 'bg-green-500/90 text-white' :
+                    property.investmentScore >= 60 ? 'bg-yellow-400/90 text-gray-900' :
+                    'bg-white/90 text-gray-700'
+                  }`}>
+                    {t('score')}: {property.investmentScore}/100
+                  </div>
+                )}
+
+                {allImages.length > 1 && (
+                  <div className="absolute bottom-4 end-4 bg-black/60 text-white text-xs px-3 py-1 rounded-full">
+                    {selectedImageIndex + 1} / {allImages.length}
                   </div>
                 )}
               </div>
 
-              {/* Additional Images */}
-              {property.imageUrls && property.imageUrls.length > 0 && (
-                <div className="p-4 border-t">
+              {allImages.length > 1 && (
+                <div className="p-3 border-t">
                   <div className="flex gap-2 overflow-x-auto">
-                    {property.imageUrls.slice(0, 5).map((url, index) => (
-                      <img
+                    {allImages.slice(0, 8).map((url, index) => (
+                      <button
                         key={index}
-                        src={url}
-                        alt={`${property.title} - Image ${index + 1}`}
-                        className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
-                      />
+                        onClick={() => setSelectedImageIndex(index)}
+                        className={`relative w-20 h-20 rounded-lg flex-shrink-0 overflow-hidden border-2 transition ${
+                          selectedImageIndex === index ? 'border-primary' : 'border-transparent hover:border-gray-300'
+                        }`}
+                      >
+                        <img
+                          src={url}
+                          alt={`${property.title} - ${index + 1}`}
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -194,104 +251,129 @@ export default function PropertyDetailPage() {
 
             {/* Property Details */}
             <div className="bg-white rounded-xl border p-6">
-              <h1 className="text-2xl font-bold mb-2">{property.title}</h1>
-
-              <div className="flex items-center text-gray-600 mb-4">
-                <MapPin className="w-5 h-5 mr-2" />
-                {property.district?.nameEn && `${property.district.nameEn}, `}
-                {property.city?.nameEn}
-              </div>
-
-              <div className="flex items-baseline gap-3 mb-6">
-                <span className="text-3xl font-bold text-primary">
-                  {formatPrice(property.price)} SAR
-                </span>
-                {property.sizeSqm && property.pricePerSqm && (
-                  <span className="text-gray-500">
-                    ({formatPrice(Number(property.pricePerSqm))}/m²)
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="flex-1">
+                  <h1 className="text-xl font-bold mb-2">{property.title}</h1>
+                  <div className="flex items-center text-gray-600 text-sm">
+                    <MapPin className="w-4 h-4 me-1.5" />
+                    {locationText}
+                  </div>
+                </div>
+                {property.propertyType && (
+                  <span className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
+                    {getName(property.propertyType)}
                   </span>
                 )}
               </div>
 
-              {/* Key Features */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                {property.bedrooms && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Bed className="w-5 h-5" />
-                    <span>{property.bedrooms} Bedrooms</span>
+              <div className="flex items-baseline gap-3 mb-6">
+                <span className="text-3xl font-bold text-primary">
+                  {formatPrice(property.price)} {sar}
+                </span>
+                {property.pricePerSqm && (
+                  <span className="text-gray-500 text-sm">
+                    ({formatPrice(Number(property.pricePerSqm))}/{locale === 'ar' ? 'م²' : 'm²'})
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                {property.bedrooms != null && (
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5">
+                    <Bed className="w-5 h-5 text-gray-500" />
+                    <div>
+                      <p className="text-xs text-gray-500">{t('bedrooms')}</p>
+                      <p className="font-medium text-sm">{property.bedrooms}</p>
+                    </div>
                   </div>
                 )}
-                {property.bathrooms && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Bath className="w-5 h-5" />
-                    <span>{property.bathrooms} Bathrooms</span>
+                {property.bathrooms != null && (
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5">
+                    <Bath className="w-5 h-5 text-gray-500" />
+                    <div>
+                      <p className="text-xs text-gray-500">{t('bathrooms')}</p>
+                      <p className="font-medium text-sm">{property.bathrooms}</p>
+                    </div>
                   </div>
                 )}
-                {property.sizeSqm && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Maximize className="w-5 h-5" />
-                    <span>{property.sizeSqm} m²</span>
+                {property.sizeSqm != null && (
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5">
+                    <Maximize className="w-5 h-5 text-gray-500" />
+                    <div>
+                      <p className="text-xs text-gray-500">{t('size')}</p>
+                      <p className="font-medium text-sm">{Number(property.sizeSqm).toLocaleString()} {locale === 'ar' ? 'م²' : 'm²'}</p>
+                    </div>
                   </div>
                 )}
-                {property.buildingAgeYears !== undefined && property.buildingAgeYears !== null && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Calendar className="w-5 h-5" />
-                    <span>{property.buildingAgeYears} years old</span>
+                {property.buildingAgeYears != null && (
+                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5">
+                    <Calendar className="w-5 h-5 text-gray-500" />
+                    <div>
+                      <p className="text-xs text-gray-500">{t('buildingAge')}</p>
+                      <p className="font-medium text-sm">{property.buildingAgeYears} {t('yrs')}</p>
+                    </div>
                   </div>
                 )}
               </div>
 
               {property.description && (
-                <div className="border-t pt-6">
-                  <h2 className="text-lg font-semibold mb-3">Description</h2>
-                  <p className="text-gray-600 whitespace-pre-line">{property.description}</p>
+                <div className="border-t pt-5">
+                  <h2 className="text-base font-semibold mb-3">{t('description')}</h2>
+                  <p className="text-gray-600 text-sm whitespace-pre-line leading-relaxed">{property.description}</p>
                 </div>
               )}
             </div>
 
             {/* Investment Analysis */}
             <div className="bg-white rounded-xl border p-6">
-              <h2 className="text-lg font-semibold mb-4">Investment Analysis</h2>
+              <h2 className="text-base font-semibold mb-4">{t('investmentAnalysis')}</h2>
 
               <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Price per m²</span>
-                    <span className="font-medium">
-                      {property.pricePerSqm ? `${formatPrice(Number(property.pricePerSqm))} SAR` : 'N/A'}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-gray-600 text-sm">{t('pricePerSqm')}</span>
+                    <span className="font-medium text-sm">
+                      {property.pricePerSqm ? `${formatPrice(Number(property.pricePerSqm))} ${sar}` : t('na')}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">District Average</span>
-                    <span className="font-medium">
-                      {property.districtAvgPricePerSqm ? `${formatPrice(Number(property.districtAvgPricePerSqm))} SAR/m²` : 'N/A'}
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-gray-600 text-sm">{t('districtAvg')}</span>
+                    <span className="font-medium text-sm">
+                      {property.districtAvgPricePerSqm ? `${formatPrice(Number(property.districtAvgPricePerSqm))} ${sar}/${locale === 'ar' ? 'م²' : 'm²'}` : t('na')}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">vs Market</span>
-                    <span className={`font-medium ${property.priceVsMarketPercent && property.priceVsMarketPercent < 0 ? 'text-green-600' : 'text-gray-900'}`}>
-                      {property.priceVsMarketPercent ? `${property.priceVsMarketPercent > 0 ? '+' : ''}${Number(property.priceVsMarketPercent).toFixed(1)}%` : 'N/A'}
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-gray-600 text-sm">{t('vsMarket')}</span>
+                    <span className={`font-medium text-sm ${property.priceVsMarketPercent && property.priceVsMarketPercent < 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                      {property.priceVsMarketPercent
+                        ? `${Number(property.priceVsMarketPercent) > 0 ? '+' : ''}${Number(property.priceVsMarketPercent).toFixed(1)}%`
+                        : t('na')
+                      }
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Est. Monthly Rent</span>
-                    <span className="font-medium">
-                      {property.estimatedMonthlyRent ? `${formatPrice(Number(property.estimatedMonthlyRent))} SAR` : 'N/A'}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-gray-600 text-sm">{t('estMonthlyRent')}</span>
+                    <span className="font-medium text-sm">
+                      {property.estimatedMonthlyRent ? `${formatPrice(Number(property.estimatedMonthlyRent))} ${sar}` : t('na')}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Est. Annual Yield</span>
-                    <span className="font-medium text-green-600">
-                      {property.estimatedAnnualYieldPercent ? `${Number(property.estimatedAnnualYieldPercent).toFixed(1)}%` : 'N/A'}
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-gray-600 text-sm">{t('estAnnualYield')}</span>
+                    <span className="font-medium text-sm text-green-600">
+                      {property.estimatedAnnualYieldPercent ? `${Number(property.estimatedAnnualYieldPercent).toFixed(1)}%` : t('na')}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Investment Score</span>
-                    <span className="font-bold text-primary">
-                      {property.investmentScore || 'N/A'}/100
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-gray-600 text-sm">{t('investmentScore')}</span>
+                    <span className={`font-bold text-sm ${
+                      (property.investmentScore || 0) >= 80 ? 'text-green-600' :
+                      (property.investmentScore || 0) >= 60 ? 'text-yellow-600' :
+                      'text-gray-600'
+                    }`}>
+                      {property.investmentScore || t('na')}/100
                     </span>
                   </div>
                 </div>
@@ -300,20 +382,19 @@ export default function PropertyDetailPage() {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Contact Card */}
-            <div className="bg-white rounded-xl border p-6 sticky top-4">
-              <h3 className="text-lg font-semibold mb-4">Contact Seller</h3>
+          <div className="space-y-5">
+            <div className="bg-white rounded-xl border p-5 sticky top-20">
+              <h3 className="font-semibold mb-4">{t('contactSeller')}</h3>
 
               {property.contactName && (
                 <div className="mb-4">
-                  <p className="text-gray-600">Listed by</p>
-                  <p className="font-medium flex items-center gap-2">
+                  <p className="text-gray-500 text-xs">{t('listedBy')}</p>
+                  <p className="font-medium text-sm flex items-center gap-2">
                     {property.contactName}
                     {property.isVerifiedContact && (
-                      <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                      <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
                         <Check className="w-3 h-3" />
-                        Verified
+                        {t('verified')}
                       </span>
                     )}
                   </p>
@@ -323,9 +404,9 @@ export default function PropertyDetailPage() {
               {property.contactPhone && (
                 <a
                   href={`tel:${property.contactPhone}`}
-                  className="w-full bg-primary text-white rounded-lg py-3 flex items-center justify-center gap-2 hover:bg-primary/90 transition mb-3"
+                  className="w-full bg-primary text-white rounded-lg py-3 flex items-center justify-center gap-2 hover:bg-primary/90 transition mb-3 text-sm font-medium"
                 >
-                  <Phone className="w-5 h-5" />
+                  <Phone className="w-4 h-4" />
                   {property.contactPhone}
                 </a>
               )}
@@ -335,65 +416,72 @@ export default function PropertyDetailPage() {
                   href={property.sourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full border border-gray-300 rounded-lg py-3 flex items-center justify-center gap-2 hover:bg-gray-50 transition"
+                  className="w-full border border-gray-300 rounded-lg py-3 flex items-center justify-center gap-2 hover:bg-gray-50 transition text-sm"
                 >
-                  <ExternalLink className="w-5 h-5" />
-                  View Original Listing
+                  <ExternalLink className="w-4 h-4" />
+                  {t('viewOriginal')}
                 </a>
               )}
 
               <div className="flex gap-2 mt-4">
-                <button className="flex-1 border border-gray-300 rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-gray-50 transition">
-                  <Heart className="w-5 h-5" />
-                  Save
-                </button>
-                <button className="flex-1 border border-gray-300 rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-gray-50 transition">
-                  <Share2 className="w-5 h-5" />
-                  Share
+                <button
+                  onClick={handleShare}
+                  className="flex-1 border border-gray-300 rounded-lg py-2.5 flex items-center justify-center gap-2 hover:bg-gray-50 transition text-sm"
+                >
+                  {copied ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      {t('copied')}
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-4 h-4" />
+                      {t('share')}
+                    </>
+                  )}
                 </button>
               </div>
             </div>
 
-            {/* Property Info */}
-            <div className="bg-white rounded-xl border p-6">
-              <h3 className="text-lg font-semibold mb-4">Property Info</h3>
+            <div className="bg-white rounded-xl border p-5">
+              <h3 className="font-semibold mb-4">{t('propertyInfo')}</h3>
 
               <div className="space-y-3 text-sm">
                 {property.propertyType && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Type</span>
-                    <span className="font-medium">{property.propertyType.nameEn}</span>
+                    <span className="text-gray-500">{t('type')}</span>
+                    <span className="font-medium">{getName(property.propertyType)}</span>
                   </div>
                 )}
-                {property.floor !== undefined && property.floor !== null && (
+                {property.floor != null && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Floor</span>
+                    <span className="text-gray-500">{t('floor')}</span>
                     <span className="font-medium">{property.floor}</span>
                   </div>
                 )}
-                {property.furnished !== undefined && (
+                {property.furnished != null && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Furnished</span>
-                    <span className="font-medium">{property.furnished ? 'Yes' : 'No'}</span>
+                    <span className="text-gray-500">{t('furnished')}</span>
+                    <span className="font-medium">{property.furnished ? t('yes') : t('no')}</span>
                   </div>
                 )}
                 {property.isVerified && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Verified</span>
+                    <span className="text-gray-500">{t('verified')}</span>
                     <span className="font-medium text-green-600 flex items-center gap-1">
-                      <Check className="w-4 h-4" /> Yes
+                      <Check className="w-4 h-4" /> {t('yes')}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Views</span>
+                  <span className="text-gray-500">{t('views')}</span>
                   <span className="font-medium">{property.viewCount || 0}</span>
                 </div>
                 {property.scrapedAt && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Listed</span>
+                    <span className="text-gray-500">{t('listed')}</span>
                     <span className="font-medium">
-                      {new Date(property.scrapedAt).toLocaleDateString()}
+                      {new Date(property.scrapedAt).toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-SA')}
                     </span>
                   </div>
                 )}

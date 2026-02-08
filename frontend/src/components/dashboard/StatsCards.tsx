@@ -1,44 +1,46 @@
+'use client';
+
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import axios from 'axios';
-import { TrendingUp, Heart, Search, Bell } from 'lucide-react';
+import { TrendingUp, Home, MapPin, Clock } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export function StatsCards() {
+  const t = useTranslations('dashboard');
   const { data } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/user/dashboard`);
+      const response = await axios.get(`${API_URL}/api/properties/meta/stats`);
       return response.data;
     },
   });
 
-  const stats = data?.stats || {};
-
   const cards = [
     {
-      label: 'صفقات جديدة اليوم',
-      value: stats.newDealsCount || 0,
-      icon: TrendingUp,
-      color: 'bg-green-500',
-    },
-    {
-      label: 'مطابقة لك',
-      value: stats.matchedDeals || 0,
-      icon: Bell,
+      label: t('totalProperties'),
+      value: data?.totalProperties || 0,
+      icon: Home,
       color: 'bg-blue-500',
     },
     {
-      label: 'المفضلة',
-      value: stats.favoritesCount || 0,
-      icon: Heart,
+      label: t('hotDeals'),
+      value: data?.totalHotDeals || 0,
+      icon: TrendingUp,
       color: 'bg-red-500',
     },
     {
-      label: 'بحث محفوظ',
-      value: stats.searchesCount || 0,
-      icon: Search,
-      color: 'bg-purple-500',
+      label: t('goodDeals'),
+      value: data?.totalDeals || 0,
+      icon: TrendingUp,
+      color: 'bg-orange-500',
+    },
+    {
+      label: t('citiesCovered'),
+      value: data?.citiesCount || 0,
+      icon: MapPin,
+      color: 'bg-green-500',
     },
   ];
 
@@ -47,14 +49,14 @@ export function StatsCards() {
       {cards.map((card) => {
         const Icon = card.icon;
         return (
-          <div key={card.label} className="bg-white p-6 rounded-xl border">
-            <div className="flex items-center gap-4">
-              <div className={`${card.color} w-12 h-12 rounded-lg flex items-center justify-center`}>
-                <Icon className="w-6 h-6 text-white" />
+          <div key={card.label} className="bg-white p-5 rounded-xl border">
+            <div className="flex items-center gap-3">
+              <div className={`${card.color} w-10 h-10 rounded-lg flex items-center justify-center`}>
+                <Icon className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">{card.label}</p>
-                <p className="text-2xl font-bold">{card.value}</p>
+                <p className="text-xs text-gray-500">{card.label}</p>
+                <p className="text-xl font-bold">{card.value}</p>
               </div>
             </div>
           </div>

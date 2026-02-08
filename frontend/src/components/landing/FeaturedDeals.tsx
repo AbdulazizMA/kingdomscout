@@ -6,10 +6,12 @@ import axios from 'axios';
 import { DealCard } from '@/components/deals/DealCard';
 import { Button } from '@/components/ui/Button';
 import { ArrowLeft } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export function FeaturedDeals() {
+  const t = useTranslations('featuredDeals');
   const { data, isLoading } = useQuery({
     queryKey: ['featured-deals'],
     queryFn: async () => {
@@ -24,16 +26,15 @@ export function FeaturedDeals() {
         <div className="flex justify-between items-end mb-12">
           <div>
             <h2 className="text-3xl font-bold text-gray-900 mb-4">
-              صفقات اليوم المميزة
+              {t('title')}
             </h2>
             <p className="text-gray-600 max-w-2xl">
-              هذه هي أعلى الصفقات تقييماً التي حددها نظامنا اليوم.
-              عقارات بأسعار أقل من السوق بنسبة 10-30%.
+              {t('subtitle')}
             </p>
           </div>
           <Link href="/deals" className="hidden sm:block">
             <Button variant="outline" className="gap-2">
-              عرض جميع العقارات
+              {t('viewAll')}
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
@@ -56,7 +57,7 @@ export function FeaturedDeals() {
             <div className="mt-8 text-center">
               <Link href="/deals">
                 <Button variant="outline" size="lg" className="gap-2">
-                  عرض جميع العقارات
+                  {t('viewAll')}
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>

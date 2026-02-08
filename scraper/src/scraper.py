@@ -20,9 +20,29 @@ logger = logging.getLogger(__name__)
 class BaseScraper:
     """Base scraper with common utilities"""
 
+    RENTAL_KEYWORDS = [
+        'للإيجار', 'للايجار', 'إيجار', 'ايجار',
+        'شهري', 'يومي', 'for rent', 'for-rent',
+    ]
+    SALE_KEYWORDS = [
+        'للبيع', 'بيع', 'for sale', 'for-sale',
+    ]
+
     def __init__(self):
         self.session = requests.Session()
         self.source_name = "unknown"
+
+    def _is_rental_listing(self, text: str, url: str = '') -> bool:
+        """Check if a listing is a rental based on text content and URL."""
+        combined = f"{text} {url}"
+        if '/for-rent/' in url or '/rent/' in url:
+            return True
+        for kw in self.RENTAL_KEYWORDS:
+            if kw in combined:
+                if any(sw in combined for sw in self.SALE_KEYWORDS):
+                    return False
+                return True
+        return False
 
     def _get_random_user_agent(self) -> str:
         user_agents = [
@@ -152,7 +172,7 @@ class AqarScraper(BaseScraper):
             image_urls = []
             for img in (imgs or []):
                 if isinstance(img, str):
-                    image_urls.append(f"https://images.aqar.fm/webp/listing/{img}")
+                    image_urls.append(f"https://images.aqar.fm/webp/750x0/props/{img}")
                 elif isinstance(img, dict) and img.get('url'):
                     image_urls.append(img['url'])
 
@@ -168,6 +188,20 @@ class AqarScraper(BaseScraper):
             source_url = f"{self.base_url}{path}" if path else f"{self.base_url}/listing/{listing_id}"
 
             title = data.get('title', 'No Title')
+            description = data.get('content', data.get('description', ''))
+
+            # Filter out rental listings
+            category = str(data.get('category', data.get('category_id', '')))
+            purpose = str(data.get('purpose', data.get('type', '')))
+            if category.lower() in ('rent', 'rental', 'إيجار', '2'):
+                logger.debug(f"aqar: Skipping rental (category={category}): {title[:50]}")
+                return None
+            if purpose.lower() in ('rent', 'rental', 'for-rent'):
+                logger.debug(f"aqar: Skipping rental (purpose={purpose}): {title[:50]}")
+                return None
+            if self._is_rental_listing(f"{title} {description}", source_url):
+                logger.debug(f"aqar: Skipping rental (keywords): {title[:50]}")
+                return None
 
             return {
                 'external_id': f"aqar-{listing_id}",
@@ -183,7 +217,7 @@ class AqarScraper(BaseScraper):
                 'full_address': data.get('address', ''),
                 'latitude': Decimal(str(lat)) if lat else None,
                 'longitude': Decimal(str(lng)) if lng else None,
-                'description': data.get('content', data.get('description', '')),
+                'description': description,
                 'main_image_url': image_urls[0] if image_urls else None,
                 'image_urls': image_urls,
                 'contact_name': contact_name,
@@ -336,69 +370,72 @@ class AqarScraper(BaseScraper):
 
 
 class BayutScraper(BaseScraper):
-    """Scraper for bayut.sa"""
+    """Scraper for bayut.sa - uses Algolia Search API directly"""
+
+    ALGOLIA_APP_ID = 'LL8IZ711CS'
+    ALGOLIA_API_KEY = '5b970b39b22a4ff1b99e5167696eef3f'
+    ALGOLIA_INDEX = 'bayut-sa-production-ads-en'
+    ALGOLIA_URL = f'https://{ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes'
+
+    CITY_SLUGS = {
+        'الرياض': 'riyadh', 'جدة': 'jeddah', 'مكة': 'makkah',
+        'المدينة': 'madina', 'الدمام': 'dammam', 'الخبر': 'al-khobar',
+        'تبوك': 'tabuk', 'أبها': 'abha', 'طائف': 'taif',
+        'بريدة': 'buraydah-al-qassim-region', 'حائل': 'hail', 'نجران': 'najran',
+        'الجبيل': 'al-jubail', 'القطيف': 'al-qatif', 'خميس-مشيط': 'khamis-mushait',
+        'ينبع': 'yanbu', 'الظهران': 'dhahran', 'الأحساء': 'al-ahsa',
+        'جازان': 'jazan', 'الباحة': 'al-bahah',
+    }
 
     def __init__(self):
         super().__init__()
         self.source_name = "bayut.sa"
         self.base_url = "https://www.bayut.sa"
 
-    CITY_SLUGS = {
-        'الرياض': 'riyadh', 'جدة': 'jeddah', 'مكة': 'makkah',
-        'المدينة': 'madinah', 'الدمام': 'dammam', 'الخبر': 'khobar',
-        'تبوك': 'tabuk', 'أبها': 'abha', 'طائف': 'taif',
-        'بريدة': 'buraidah', 'حائل': 'hail', 'نجران': 'najran',
-        'الجبيل': 'jubail', 'القطيف': 'qatif', 'خميس-مشيط': 'khamis-mushait',
-    }
+    def _algolia_search(self, city_slug: str, page: int = 0, hits_per_page: int = 24) -> Optional[Dict]:
+        """Query Algolia search API directly"""
+        url = f"{self.ALGOLIA_URL}/{self.ALGOLIA_INDEX}/query"
+        payload = {
+            "query": "",
+            "hitsPerPage": hits_per_page,
+            "page": page,
+            "facetFilters": [
+                [f"location.slug:/{city_slug}"],
+                ["purpose:for-sale"]
+            ]
+        }
+        headers = {
+            'x-algolia-api-key': self.ALGOLIA_API_KEY,
+            'x-algolia-application-id': self.ALGOLIA_APP_ID,
+            'Content-Type': 'application/json',
+        }
+        try:
+            response = self.session.post(url, json=payload, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"bayut.sa Algolia API error: {e}")
+            return None
 
     def scrape_listings_page(self, city: str, page: int = 1) -> List[Dict[str, Any]]:
         listings = []
         city_slug = self.CITY_SLUGS.get(city, city.lower())
 
         try:
-            url = f"{self.base_url}/for-sale/property/{city_slug}/"
-            if page > 1:
-                url += f"page-{page}/"
-
-            logger.info(f"Scraping bayut.sa: {url}")
-            response = self._safe_request(url, headers={
-                'Accept': 'text/html,application/xhtml+xml',
-                'Referer': self.base_url,
-            })
-            if not response:
+            # Algolia uses 0-based pages
+            result = self._algolia_search(city_slug, page=page - 1)
+            if not result:
                 return listings
 
-            soup = BeautifulSoup(response.text, 'html.parser')
+            hits = result.get('hits', [])
+            for hit in hits:
+                listing = self._parse_hit(hit, city)
+                if listing:
+                    listings.append(listing)
 
-            # __NEXT_DATA__
-            script = soup.find('script', id='__NEXT_DATA__')
-            if script and script.string:
-                try:
-                    next_data = json.loads(script.string)
-                    hits = next_data.get('props', {}).get('pageProps', {}).get('hits', [])
-                    for hit in hits:
-                        listing = self._parse_hit(hit, city)
-                        if listing:
-                            listings.append(listing)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"bayut.sa: JSON parse error: {e}")
-
-            # Fallback: JSON-LD
-            if not listings:
-                for s in soup.find_all('script', type='application/ld+json'):
-                    try:
-                        data = json.loads(s.string)
-                        items = data if isinstance(data, list) else [data]
-                        for item in items:
-                            if isinstance(item, dict) and item.get('@type') in ['Product', 'RealEstateListing', 'Residence']:
-                                listing = self._parse_jsonld(item, city)
-                                if listing:
-                                    listings.append(listing)
-                    except json.JSONDecodeError:
-                        continue
-
-            logger.info(f"bayut.sa: {len(listings)} listings from page {page}")
-            time.sleep(random.uniform(2, 4))
+            total = result.get('nbHits', 0)
+            logger.info(f"bayut.sa: {len(listings)} listings from page {page} (total: {total})")
+            time.sleep(random.uniform(1, 2))
         except Exception as e:
             logger.error(f"Error scraping bayut.sa: {e}")
         return listings
@@ -413,6 +450,8 @@ class BayutScraper(BaseScraper):
                 return None
 
             title = hit.get('title', hit.get('title_l1', 'No Title'))
+
+            # Cover photo
             cover = hit.get('coverPhoto', {})
             main_image = cover.get('url', '') if isinstance(cover, dict) else ''
             image_urls = []
@@ -422,9 +461,12 @@ class BayutScraper(BaseScraper):
                 if isinstance(photo, dict) and photo.get('url'):
                     image_urls.append(photo['url'])
 
-            location = hit.get('geography', {})
-            lat = location.get('lat') if isinstance(location, dict) else None
-            lng = location.get('lng') if isinstance(location, dict) else None
+            # Location
+            geo = hit.get('geography', {})
+            lat = geo.get('lat') if isinstance(geo, dict) else None
+            lng = geo.get('lng') if isinstance(geo, dict) else None
+
+            # District from location hierarchy
             district = ''
             loc_list = hit.get('location', [])
             if isinstance(loc_list, list) and len(loc_list) > 1:
@@ -434,15 +476,23 @@ class BayutScraper(BaseScraper):
             slug = hit.get('slug', '')
             source_url = f"{self.base_url}/{slug}" if slug else f"{self.base_url}/property/details-{ext_id}.html"
 
+            # Area
+            area = hit.get('area')
+            size_sqm = Decimal(str(area)) if area and float(area) > 0 else None
+
+            # Rooms
+            rooms = hit.get('rooms')
+            baths = hit.get('baths')
+
             return {
                 'external_id': f"bayut-{ext_id}",
                 'source': 'bayut.sa',
                 'source_url': source_url,
                 'title': title,
                 'price': Decimal(str(price)),
-                'size_sqm': Decimal(str(hit['area'])) if hit.get('area') and hit['area'] > 0 else None,
-                'bedrooms': int(hit['bedrooms']) if hit.get('bedrooms') else None,
-                'bathrooms': int(hit['bathrooms']) if hit.get('bathrooms') else None,
+                'size_sqm': size_sqm,
+                'bedrooms': int(rooms) if rooms else None,
+                'bathrooms': int(baths) if baths else None,
                 'city': city,
                 'district': district,
                 'latitude': Decimal(str(lat)) if lat else None,
@@ -451,39 +501,13 @@ class BayutScraper(BaseScraper):
                 'main_image_url': main_image or None,
                 'image_urls': image_urls[:10],
                 'contact_name': hit.get('contactName', ''),
-                'contact_phone': '',
+                'contact_phone': hit.get('phoneNumber', {}).get('mobile', '') if isinstance(hit.get('phoneNumber'), dict) else '',
                 'property_type': self._detect_type(title),
-                'furnished': hit.get('furnishingStatus') == 'furnished',
+                'furnished': hit.get('furnishingStatus') == 'furnished' if hit.get('furnishingStatus') else None,
                 'scraped_at': datetime.now(),
             }
         except Exception as e:
             logger.warning(f"bayut.sa: parse error: {e}")
-            return None
-
-    def _parse_jsonld(self, data: Dict, city: str) -> Optional[Dict[str, Any]]:
-        try:
-            name = data.get('name', 'No Title')
-            url = data.get('url', '')
-            price_data = data.get('offers', {})
-            price = price_data.get('price') if isinstance(price_data, dict) else None
-            if not price:
-                return None
-            ext_id = url.rstrip('/').split('-')[-1].split('.')[0] if url else str(abs(hash(name)))[:10]
-            return {
-                'external_id': f"bayut-{ext_id}",
-                'source': 'bayut.sa',
-                'source_url': url if url.startswith('http') else f"{self.base_url}{url}",
-                'title': name,
-                'price': Decimal(str(price)),
-                'city': city,
-                'district': '',
-                'description': data.get('description', ''),
-                'main_image_url': data.get('image', ''),
-                'property_type': self._detect_type(name),
-                'scraped_at': datetime.now(),
-            }
-        except Exception as e:
-            logger.warning(f"bayut.sa: JSON-LD error: {e}")
             return None
 
     def _detect_type(self, title: str) -> str:
@@ -504,7 +528,7 @@ class BayutScraper(BaseScraper):
     def scrape_city(self, city: str, max_pages: int = 3, scrape_details: bool = False) -> List[Dict[str, Any]]:
         all_listings = []
         seen_ids = set()
-        logger.info(f"bayut.sa: Starting scrape for: {city}")
+        logger.info(f"bayut.sa: Starting Algolia scrape for: {city}")
         for page in range(1, max_pages + 1):
             page_listings = self.scrape_listings_page(city, page=page)
             if not page_listings:
@@ -518,111 +542,174 @@ class BayutScraper(BaseScraper):
 
 
 class HarajScraper(BaseScraper):
-    """Scraper for haraj.com.sa"""
+    """Scraper for haraj.com.sa - uses GraphQL API directly"""
+
+    GRAPHQL_URL = "https://graphql.haraj.com.sa"
+
+    SEARCH_QUERY = """
+query Search($search: String!, $city: String, $page: Int, $tag: String) {
+  search(search: $search, city: $city, page: $page, tag: $tag) {
+    items {
+      id title postDate updateDate authorUsername authorId URL
+      bodyTEXT thumbURL hasImage city geoCity geoNeighborhood geoHash
+      tags imagesList isPromoted status postType
+      price { formattedPrice }
+      realEstateInfo {
+        re_AdvertiserType re_Direction re_Area re_PropertyAge
+        re_RoomCount re_LivingRoomCount re_WCCount re_MeterPrice
+        re_FloorNum re_IsFurnished re_AccommType re_FloorsCount
+      }
+    }
+    pageInfo { hasNextPage }
+  }
+}
+"""
+
+    # Haraj uses colloquial Arabic (ha ه) not formal (taa marbuta ة)
+    # Also some cities need alef-lam or different forms
+    CITY_NAME_MAP = {
+        'جدة': 'جده',
+        'مكة': 'مكه',
+        'المدينة': 'المدينه',
+        'الباحة': 'الباحه',
+        'طائف': 'الطائف',
+        'خميس-مشيط': 'خميس مشيط',
+    }
+
+    # Multiple tags to maximize real estate coverage
+    RE_TAGS = ['حراج العقار', 'فلل للبيع', 'شقق للبيع', 'اراضي للبيع']
 
     def __init__(self):
         super().__init__()
         self.source_name = "haraj.com.sa"
         self.base_url = "https://haraj.com.sa"
 
-    def scrape_listings_page(self, city: str, page: int = 1) -> List[Dict[str, Any]]:
+    def _graphql_query(self, city: str, tag: str, page: int = 0) -> Optional[Dict]:
+        """Query haraj GraphQL API"""
+        # Map city name to Haraj's colloquial spelling
+        haraj_city = self.CITY_NAME_MAP.get(city, city)
+        try:
+            response = self.session.post(
+                self.GRAPHQL_URL,
+                json={
+                    "query": self.SEARCH_QUERY,
+                    "variables": {
+                        "search": "",
+                        "city": haraj_city,
+                        "page": page,
+                        "tag": tag
+                    }
+                },
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'User-Agent': self._get_random_user_agent(),
+                    'Accept-Language': 'ar-SA,ar;q=0.9',
+                    'Origin': self.base_url,
+                    'Referer': f'{self.base_url}/tags/%D8%AD%D8%B1%D8%A7%D8%AC+%D8%A7%D9%84%D8%B9%D9%82%D8%A7%D8%B1',
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"haraj.com.sa GraphQL error: {e}")
+            return None
+
+    def scrape_listings_page(self, city: str, page: int = 1, tag: str = 'حراج العقار') -> List[Dict[str, Any]]:
         listings = []
         try:
-            url = f"{self.base_url}/tags/%D8%B9%D9%82%D8%A7%D8%B1%D8%A7%D8%AA"
-            if page > 1:
-                url += f"?page={page}"
-
-            logger.info(f"Scraping haraj.com.sa: {url}")
-            response = self._safe_request(url, headers={
-                'Accept': 'text/html,application/xhtml+xml',
-                'Referer': self.base_url,
-            })
-            if not response:
+            # API pages 0 and 1 return identical results; real data starts at page 0, then page 2+
+            api_page = 0 if page == 1 else page
+            result = self._graphql_query(city, tag=tag, page=api_page)
+            if not result:
                 return listings
 
-            soup = BeautifulSoup(response.text, 'html.parser')
+            search_data = result.get('data', {}).get('search', {})
+            items = search_data.get('items', [])
 
-            # __NEXT_DATA__
-            script = soup.find('script', id='__NEXT_DATA__')
-            if script and script.string:
-                try:
-                    next_data = json.loads(script.string)
-                    page_props = next_data.get('props', {}).get('pageProps', {})
-                    posts = page_props.get('posts', page_props.get('data', {}).get('posts', []))
-                    if isinstance(posts, list):
-                        for post in posts:
-                            listing = self._parse_post(post, city)
-                            if listing:
-                                listings.append(listing)
-                except json.JSONDecodeError:
-                    pass
+            for post in items:
+                listing = self._parse_post(post, city)
+                if listing:
+                    listings.append(listing)
 
-            # Fallback: HTML
-            if not listings:
-                for card in soup.find_all(['div', 'article'], class_=re.compile('post|item|card'))[:30]:
-                    link = card.find('a', href=True)
-                    if not link:
-                        continue
-                    href = link.get('href', '')
-                    title = link.get_text(strip=True)
-                    re_keywords = ['شقة', 'فيلا', 'أرض', 'عمارة', 'بيت', 'دور', 'عقار', 'للبيع']
-                    if not any(kw in title for kw in re_keywords):
-                        continue
-                    price = None
-                    pm = re.search(r'([\d,]+)\s*(ريال|SAR)', card.get_text())
-                    if pm:
-                        price = self._parse_price(pm.group(1))
-                    ext_id = href.rstrip('/').split('/')[-1]
-                    listings.append({
-                        'external_id': f"haraj-{ext_id}",
-                        'source': 'haraj.com.sa',
-                        'source_url': href if href.startswith('http') else f"{self.base_url}{href}",
-                        'title': title[:200],
-                        'price': price,
-                        'city': city,
-                        'district': '',
-                        'property_type': self._detect_type(title),
-                        'scraped_at': datetime.now(),
-                    })
-
-            logger.info(f"haraj.com.sa: {len(listings)} listings from page {page}")
-            time.sleep(random.uniform(2, 4))
+            has_next = search_data.get('pageInfo', {}).get('hasNextPage', False)
+            logger.info(f"haraj.com.sa: {len(listings)} listings from page {page} tag={tag} (hasNext: {has_next})")
+            time.sleep(random.uniform(1.5, 3))
         except Exception as e:
             logger.error(f"Error scraping haraj.com.sa: {e}")
         return listings
 
     def _parse_post(self, post: Dict, city: str) -> Optional[Dict[str, Any]]:
         try:
-            post_id = str(post.get('id', post.get('postId', '')))
+            post_id = str(post.get('id', ''))
             if not post_id:
                 return None
-            title = post.get('title', post.get('postTitle', ''))
-            body = post.get('body', post.get('postText', ''))
+
+            title = post.get('title', '')
+            body = post.get('bodyTEXT', '')
             text = f"{title} {body}"
 
-            re_keywords = ['شقة', 'فيلا', 'أرض', 'عمارة', 'بيت', 'دور', 'عقار', 'للبيع']
+            # Filter: only real estate posts for sale
+            re_keywords = ['شقة', 'فيلا', 'أرض', 'عمارة', 'بيت', 'دور', 'عقار', 'للبيع', 'ارض']
             if not any(kw in text for kw in re_keywords):
                 return None
 
-            price = None
-            for pattern in [r'([\d,]+(?:\.\d+)?)\s*(?:ريال|SAR|ر\.س)', r'السعر\s*:?\s*([\d,]+)', r'بسعر\s*([\d,]+)']:
-                match = re.search(pattern, text)
-                if match:
-                    price = self._parse_price(match.group(1))
-                    if price:
-                        break
+            # Exclude rental listings
+            post_url = post.get('URL', '')
+            if self._is_rental_listing(text, post_url):
+                logger.debug(f"haraj: Skipping rental: {title[:50]}")
+                return None
 
-            images = post.get('images', post.get('imgs', []))
+            # Parse price from structured data
+            price = None
+            price_data = post.get('price', {})
+            if isinstance(price_data, dict):
+                formatted = price_data.get('formattedPrice', '')
+                if formatted:
+                    price = self._parse_price(formatted)
+
+            # Fallback: extract price from text
+            if not price:
+                for pattern in [r'([\d,]+(?:\.\d+)?)\s*(?:ريال|SAR|ر\.س)', r'السعر\s*:?\s*([\d,]+)', r'بسعر\s*([\d,]+)']:
+                    match = re.search(pattern, text)
+                    if match:
+                        price = self._parse_price(match.group(1))
+                        if price:
+                            break
+
+            # Real estate info
+            re_info = post.get('realEstateInfo', {}) or {}
+            area = re_info.get('re_Area')
+            rooms = re_info.get('re_RoomCount')
+            wc = re_info.get('re_WCCount')
+            floor_num = re_info.get('re_FloorNum')
+            is_furnished = re_info.get('re_IsFurnished')
+            property_age = re_info.get('re_PropertyAge')
+            accomm_type = re_info.get('re_AccommType', '')
+
+            # Images
+            thumb = post.get('thumbURL', '')
+            images_list = post.get('imagesList', [])
             image_urls = []
-            if isinstance(images, list):
-                for img in images:
-                    if isinstance(img, str):
+            if thumb:
+                image_urls.append(thumb)
+            if isinstance(images_list, list):
+                for img in images_list:
+                    if isinstance(img, str) and img not in image_urls:
                         image_urls.append(img)
-                    elif isinstance(img, dict) and img.get('url'):
+                    elif isinstance(img, dict) and img.get('url') and img['url'] not in image_urls:
                         image_urls.append(img['url'])
 
-            slug = post.get('slug', '')
-            source_url = f"{self.base_url}/{slug}" if slug else f"{self.base_url}/post/{post_id}"
+            # URL
+            post_url = post.get('URL', '')
+            source_url = f"{self.base_url}/{post_url}" if post_url else f"{self.base_url}/post/{post_id}"
+
+            # District
+            district = post.get('geoNeighborhood', '') or ''
+
+            # Detect property type
+            prop_type = self._detect_type_from_accomm(accomm_type) if accomm_type else self._detect_type(text)
 
             return {
                 'external_id': f"haraj-{post_id}",
@@ -632,19 +719,37 @@ class HarajScraper(BaseScraper):
                 'price': price,
                 'description': body[:500] if body else '',
                 'city': city,
-                'district': '',
+                'district': district,
+                'size_sqm': Decimal(str(area)) if area and str(area).replace('.', '').isdigit() and float(area) > 0 else None,
+                'bedrooms': int(rooms) if rooms and str(rooms).isdigit() else None,
+                'bathrooms': int(wc) if wc and str(wc).isdigit() else None,
+                'floor': int(floor_num) if floor_num and str(floor_num).isdigit() else None,
+                'building_age_years': int(property_age) if property_age and str(property_age).isdigit() else None,
+                'furnished': bool(is_furnished) if is_furnished is not None else None,
                 'main_image_url': image_urls[0] if image_urls else None,
                 'image_urls': image_urls[:10],
-                'property_type': self._detect_type(text),
+                'property_type': prop_type,
                 'scraped_at': datetime.now(),
             }
         except Exception as e:
             logger.warning(f"haraj.com.sa: parse error: {e}")
             return None
 
+    def _detect_type_from_accomm(self, accomm_type: str) -> str:
+        mapping = {
+            'شقة': 'apartment', 'فيلا': 'villa', 'أرض': 'land',
+            'عمارة': 'building', 'بيت': 'villa', 'دور': 'apartment',
+            'استراحة': 'chalet', 'مزرعة': 'farm', 'مكتب': 'office',
+            'محل': 'shop', 'دوبلكس': 'villa',
+        }
+        for ar, en in mapping.items():
+            if ar in accomm_type:
+                return en
+        return 'apartment'
+
     def _detect_type(self, text: str) -> str:
         for ar, en in {
-            'شقة': 'apartment', 'فيلا': 'villa', 'أرض': 'land',
+            'شقة': 'apartment', 'فيلا': 'villa', 'أرض': 'land', 'ارض': 'land',
             'عمارة': 'building', 'مكتب': 'office', 'محل': 'shop',
             'بيت': 'villa', 'دور': 'apartment',
         }.items():
@@ -652,18 +757,26 @@ class HarajScraper(BaseScraper):
                 return en
         return 'apartment'
 
-    def scrape_city(self, city: str, max_pages: int = 2, scrape_details: bool = False) -> List[Dict[str, Any]]:
+    def scrape_city(self, city: str, max_pages: int = 3, scrape_details: bool = False) -> List[Dict[str, Any]]:
         all_listings = []
         seen_ids = set()
-        logger.info(f"haraj.com.sa: Starting scrape for: {city}")
-        for page in range(1, max_pages + 1):
-            page_listings = self.scrape_listings_page(city, page=page)
-            if not page_listings:
-                break
-            for listing in page_listings:
-                if listing['external_id'] not in seen_ids:
-                    seen_ids.add(listing['external_id'])
-                    all_listings.append(listing)
+        logger.info(f"haraj.com.sa: Starting GraphQL scrape for: {city}")
+
+        for tag in self.RE_TAGS:
+            # Pages: 1 maps to API page 0, then 2 maps to API page 2, 3->3, etc.
+            for page in range(1, max_pages + 1):
+                page_listings = self.scrape_listings_page(city, page=page, tag=tag)
+                if not page_listings:
+                    break
+                new_count = 0
+                for listing in page_listings:
+                    if listing['external_id'] not in seen_ids:
+                        seen_ids.add(listing['external_id'])
+                        all_listings.append(listing)
+                        new_count += 1
+                if new_count == 0:
+                    break  # All duplicates, stop paging this tag
+
         logger.info(f"haraj.com.sa: Total for {city}: {len(all_listings)}")
         return all_listings
 

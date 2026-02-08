@@ -2,15 +2,18 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/Button';
+import { LanguageSwitcher } from '@/components/layout/LanguageSwitcher';
 import { Menu, X, Home } from 'lucide-react';
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const { isAuthenticated, user } = useAuth();
   const { logout } = useAuthStore();
+  const t = useTranslations('nav');
 
   return (
     <nav className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b">
@@ -30,34 +33,35 @@ export function Navbar() {
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-8">
             <Link href="/deals" className="text-gray-600 hover:text-primary transition">
-              عقارات للبيع
+              {t('properties')}
             </Link>
             <Link href="/#how-it-works" className="text-gray-600 hover:text-primary transition">
-              كيف يعمل
+              {t('howItWorks')}
             </Link>
             <Link href="/#faq" className="text-gray-600 hover:text-primary transition">
-              الأسئلة الشائعة
+              {t('faq')}
             </Link>
           </div>
 
-          {/* Auth Buttons */}
+          {/* Auth Buttons + Language */}
           <div className="hidden md:flex items-center gap-4">
+            <LanguageSwitcher />
             {isAuthenticated ? (
               <>
                 <Link href="/dashboard">
-                  <Button variant="ghost">لوحة التحكم</Button>
+                  <Button variant="ghost">{t('dashboard')}</Button>
                 </Link>
                 <Button variant="outline" onClick={logout}>
-                  تسجيل الخروج
+                  {t('logout')}
                 </Button>
               </>
             ) : (
               <>
                 <Link href="/login">
-                  <Button variant="ghost">تسجيل الدخول</Button>
+                  <Button variant="ghost">{t('login')}</Button>
                 </Link>
                 <Link href="/register">
-                  <Button>حساب مجاني</Button>
+                  <Button>{t('signUp')}</Button>
                 </Link>
               </>
             )}
@@ -76,20 +80,21 @@ export function Navbar() {
         {isOpen && (
           <div className="md:hidden py-4 border-t">
             <div className="flex flex-col space-y-4">
-              <Link href="/deals" className="text-gray-600">عقارات للبيع</Link>
-              <Link href="/#how-it-works" className="text-gray-600">كيف يعمل</Link>
-              <Link href="/#faq" className="text-gray-600">الأسئلة الشائعة</Link>
+              <Link href="/deals" className="text-gray-600" onClick={() => setIsOpen(false)}>{t('properties')}</Link>
+              <Link href="/#how-it-works" className="text-gray-600" onClick={() => setIsOpen(false)}>{t('howItWorks')}</Link>
+              <Link href="/#faq" className="text-gray-600" onClick={() => setIsOpen(false)}>{t('faq')}</Link>
               {isAuthenticated ? (
                 <>
-                  <Link href="/dashboard">لوحة التحكم</Link>
-                  <button onClick={logout}>تسجيل الخروج</button>
+                  <Link href="/dashboard" onClick={() => setIsOpen(false)}>{t('dashboard')}</Link>
+                  <button onClick={() => { logout(); setIsOpen(false); }}>{t('logout')}</button>
                 </>
               ) : (
                 <>
-                  <Link href="/login">تسجيل الدخول</Link>
-                  <Link href="/register">حساب مجاني</Link>
+                  <Link href="/login" onClick={() => setIsOpen(false)}>{t('login')}</Link>
+                  <Link href="/register" onClick={() => setIsOpen(false)}>{t('signUp')}</Link>
                 </>
               )}
+              <LanguageSwitcher />
             </div>
           </div>
         )}

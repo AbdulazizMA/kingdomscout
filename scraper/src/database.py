@@ -363,4 +363,50 @@ class DatabaseManager:
             conn.close()
 
 
+    def delete_stale_properties(self, days: int = 7) -> int:
+        """Delete properties not seen for the specified number of days."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                DELETE FROM properties
+                WHERE status = 'active'
+                  AND last_seen_at < NOW() - INTERVAL '%s days'
+                """,
+                (days,)
+            )
+            count = cursor.rowcount
+            conn.commit()
+            logger.info(f"Stale cleanup: deleted {count} properties not seen for {days}+ days")
+            return count
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error deleting stale properties: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def get_completed_scrape_cycles(self) -> int:
+        """Count distinct completed scrape cycles."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT DATE_TRUNC('hour', completed_at)) as count
+                FROM scraper_jobs
+                WHERE status IN ('completed', 'partial')
+                  AND completed_at IS NOT NULL
+                """
+            )
+            result = cursor.fetchone()
+            return int(result['count']) if result and result['count'] else 0
+        except Exception as e:
+            logger.error(f"Error counting scrape cycles: {e}")
+            return 0
+        finally:
+            conn.close()
+
+
 db_manager = DatabaseManager()

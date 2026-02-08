@@ -1,34 +1,26 @@
-import { Search, Zap, Bell } from 'lucide-react';
+'use client';
 
-const steps = [
-  {
-    icon: Search,
-    title: 'نراقب السوق',
-    description: 'يقوم نظامنا بمراقبة sa.aqar.fm كل 4 ساعات في أكثر من 15 مدينة سعودية، ويسجل كل إعلان جديد.',
-  },
-  {
-    icon: Zap,
-    title: 'الذكاء الاصطناعي يحلل كل صفقة',
-    description: 'يقوم خوارزميتنا بحساب متوسطات السوق، وتقييم الاستثمارات (1-100)، وتحديد الصفقات الأقل من السوق بـ 10% أو أكثر.',
-  },
-  {
-    icon: Bell,
-    title: 'تحصل على تنبيهات فورية',
-    description: 'استلم إشعارات بالعقارات الجديدة المطابقة لمعاييرك عبر البريد الإلكتروني أو تلغرام.',
-  },
-];
+import { Search, Zap, Bell } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export function HowItWorks() {
+  const t = useTranslations('howItWorks');
+
+  const steps = [
+    { icon: Search, title: t('step1Title'), description: t('step1Desc') },
+    { icon: Zap, title: t('step2Title'), description: t('step2Desc') },
+    { icon: Bell, title: t('step3Title'), description: t('step3Desc') },
+  ];
+
   return (
     <section className="py-20 bg-gray-50" id="how-it-works">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold text-gray-900 mb-4">
-            كيف يعمل
+            {t('title')}
           </h2>
           <p className="text-gray-600 max-w-2xl mx-auto">
-            العثور على صفقات رائعة لا يجب أن يستغرق ساعات من البحث اليدوي. 
-            نظامنا الآلي يقوم بالعمل الشاق حتى تتمكن أنت من التركيز على إتمام الصفقات.
+            {t('subtitle')}
           </p>
         </div>
 

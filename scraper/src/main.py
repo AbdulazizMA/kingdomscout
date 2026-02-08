@@ -198,6 +198,16 @@ class ScraperRunner:
         except Exception as e:
             logger.error(f"Error updating averages: {e}")
 
+        # Delete stale properties not seen for N days
+        try:
+            cycle_count = db_manager.get_completed_scrape_cycles()
+            if cycle_count >= settings.STALE_MIN_SCRAPE_CYCLES:
+                db_manager.delete_stale_properties(days=settings.STALE_DELETE_DAYS)
+            else:
+                logger.info(f"Skipping stale cleanup: {cycle_count} cycles completed (min: {settings.STALE_MIN_SCRAPE_CYCLES})")
+        except Exception as e:
+            logger.error(f"Error in stale cleanup: {e}")
+
         try:
             self.notifier.send_scrape_summary(results)
         except Exception as e:

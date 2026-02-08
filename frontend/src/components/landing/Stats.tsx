@@ -3,10 +3,12 @@
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { TrendingUp, Users, Home, Clock } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export function Stats() {
+  const t = useTranslations('stats');
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: async () => {
@@ -26,26 +28,26 @@ export function Stats() {
     {
       icon: Home,
       value: stats ? formatNumber(stats.totalProperties) : '...',
-      label: 'عقار محلل',
-      description: 'كل إعلان يتم فحصه للقيمة',
+      label: t('propertiesAnalyzed'),
+      description: t('propertiesDesc'),
     },
     {
       icon: TrendingUp,
       value: stats ? formatNumber(stats.totalDeals) : '...',
-      label: 'صفقة مكتشفة',
-      description: 'أقل من السوق بـ 10% أو أكثر',
+      label: t('dealsFound'),
+      description: t('dealsDesc'),
     },
     {
       icon: Users,
       value: stats ? `${stats.citiesCount}+` : '...',
-      label: 'مدينة مغطاة',
-      description: 'جميع المدن الرئيسية',
+      label: t('citiesCovered'),
+      description: t('citiesDesc'),
     },
     {
       icon: Clock,
-      value: stats?.updateFrequency === '4 hours' ? '4 ساعات' : '4 ساعات',
-      label: 'تردد التحديث',
-      description: 'أسرع من المنافسين',
+      value: t('updateFreqValue'),
+      label: t('updateFrequency'),
+      description: t('updateDesc'),
     },
   ];
 

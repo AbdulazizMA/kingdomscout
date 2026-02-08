@@ -1,42 +1,29 @@
-import { ChevronDown } from 'lucide-react';
+'use client';
 
-const faqs = [
-  {
-    question: "كيف يحدد الذكاء الاصطناعي أن الصفقة 'مميزة'؟",
-    answer: "يقارن خوارزميتنا سعر الإعلان بمتوسطات السوق للعقارات المشابهة في نفس الحي. الصفقات المسعرة بأقل من السوق بـ 15% أو أكثر يتم وسمها كـ 'صفقات مميزة'، بينما التي بأقل من 10-15% يتم وسمها كـ 'صفقات جيدة'. نأخذ أيضاً في الاعتبار عائد الإيجار المحتمل والوقت في السوق."
-  },
-  {
-    question: "كم مرة يتم تحديث البيانات؟",
-    answer: "يقوم نظامنا بالمسح كل 4 ساعات، مراقباً sa.aqar.fm للإعلانات الجديدة في جميع المدن التي نغطيها."
-  },
-  {
-    question: "هل يمكنني الحصول على تنبيهات لمعايير محددة؟",
-    answer: "نعم! يمكنك إنشاء حساب مجاني ثم إنشاء عمليات بحث محفوظة مع فلاتر مخصصة (المدينة، الحي، نطاق السعر، نوع العقار، إلخ) واستلام تنبيهات بالبريد الإلكتروني أو تلغرام عند العثور على صفقات جديدة مطابقة."
-  },
-  {
-    question: "هل معلومات الاتصال دقيقة؟",
-    answer: "نستخرج معلومات الاتصال مباشرة من الإعلانات المصدر. بينما نقوم بالتحقق من تنسيقات أرقام الهواتف، نوصي بالتحقق من التفاصيل قبل أي التزامات."
-  },
-  {
-    question: "ما المدن التي تغطونها؟",
-    answer: "نغطي حالياً جميع المدن السعودية الرئيسية بما فيها الرياض، جدة، مكة، المدينة، الدمام، الخبر، الطائف، أبها، خميس مشيط، بريدة، تبوك، حائل، نجران، الجبيل، والقطيف."
-  },
-  {
-    question: "هل الخدمة مجانية؟",
-    answer: "نعم! KingdomScout مجاني 100%. جميع الميزات متاحة للجميع دون أي رسوم اشتراك."
-  },
-];
+import { ChevronDown } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export function FAQ() {
+  const t = useTranslations('faq');
+
+  const faqs = [
+    { question: t('q1'), answer: t('a1') },
+    { question: t('q2'), answer: t('a2') },
+    { question: t('q3'), answer: t('a3') },
+    { question: t('q4'), answer: t('a4') },
+    { question: t('q5'), answer: t('a5') },
+    { question: t('q6'), answer: t('a6') },
+  ];
+
   return (
     <section className="py-20 bg-gray-50" id="faq">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold text-gray-900 mb-4">
-            الأسئلة الشائعة
+            {t('title')}
           </h2>
           <p className="text-gray-600">
-            كل ما تحتاج معرفته عن KingdomScout.
+            {t('subtitle')}
           </p>
         </div>
 
