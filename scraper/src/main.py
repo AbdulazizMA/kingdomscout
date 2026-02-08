@@ -12,6 +12,7 @@ from config import settings, logger
 from scraper import MultiSourceScraper
 from database import db_manager
 from notifications import NotificationManager
+from validator import validate_listing, apply_flag_penalty, ValidationResult
 
 SAUDI_CITIES = {
     'الرياض': {'en': 'Riyadh', 'slug': 'riyadh', 'region': 'Riyadh Region', 'priority': 1},
@@ -87,12 +88,19 @@ class ScraperRunner:
 
         return analysis
 
-    def process_listing(self, listing: Dict[str, Any], city_id: str, city_avg_price: float = None) -> bool:
+    def process_listing(self, listing: Dict[str, Any], city_id: str, city_avg_price: float = None) -> str:
+        """Process a listing. Returns 'saved', 'rejected', 'flagged', or 'error'."""
         try:
             listing['city_id'] = city_id
 
             if not listing.get('price'):
-                return False
+                return 'rejected'
+
+            # Validate before any DB work
+            vresult, reasons = validate_listing(listing)
+            if vresult == ValidationResult.REJECT:
+                logger.info(f"REJECTED {listing.get('external_id')}: {'; '.join(reasons)}")
+                return 'rejected'
 
             if listing.get('district'):
                 district_id = db_manager.get_or_create_district(city_id, listing['district'])
@@ -107,17 +115,25 @@ class ScraperRunner:
             analysis = self.analyze_property(listing, city_avg_price)
             listing.update(analysis)
 
+            # Apply flag penalty after scoring
+            if vresult == ValidationResult.FLAG:
+                listing = apply_flag_penalty(listing, reasons)
+                logger.info(f"FLAGGED {listing.get('external_id')}: {'; '.join(reasons)}")
+
             success, action = db_manager.save_property(listing)
-            return success
+            if success:
+                return 'flagged' if vresult == ValidationResult.FLAG else 'saved'
+            return 'error'
 
         except Exception as e:
             logger.error(f"Error processing listing {listing.get('external_id')}: {e}")
-            return False
+            return 'error'
 
     def scrape_city(self, city_ar: str, city_info: Dict, max_pages: int = 3) -> Dict[str, Any]:
         result = {
             'city': city_ar, 'city_en': city_info['en'],
-            'found': 0, 'created': 0, 'updated': 0, 'errors': 0,
+            'found': 0, 'created': 0, 'updated': 0,
+            'rejected': 0, 'flagged': 0, 'errors': 0,
             'start_time': datetime.now(),
         }
 
@@ -143,27 +159,37 @@ class ScraperRunner:
                 db_manager.log_scraper_job(city_id, 'completed', 0, 0, 0)
                 return result
 
-            processed = 0
+            saved = 0
             for listing in listings:
                 try:
-                    if self.process_listing(listing, city_id, city_avg):
-                        processed += 1
+                    outcome = self.process_listing(listing, city_id, city_avg)
+                    if outcome == 'saved':
+                        saved += 1
+                    elif outcome == 'flagged':
+                        saved += 1
+                        result['flagged'] += 1
+                    elif outcome == 'rejected':
+                        result['rejected'] += 1
                     else:
                         result['errors'] += 1
                 except Exception as e:
                     logger.error(f"Error processing: {e}")
                     result['errors'] += 1
 
-            result['created'] = processed
+            result['created'] = saved
 
             db_manager.log_scraper_job(
                 city_id,
                 'completed' if result['errors'] == 0 else 'partial',
-                result['found'], processed, 0,
-                f"{result['errors']} errors" if result['errors'] > 0 else None
+                result['found'], saved, 0,
+                f"{result['errors']} errors, {result['rejected']} rejected, {result['flagged']} flagged"
+                if (result['errors'] + result['rejected'] + result['flagged']) > 0 else None
             )
 
-            logger.info(f"Done {city_info['en']}: {result['found']} found, {processed} saved, {result['errors']} errors")
+            logger.info(
+                f"Done {city_info['en']}: {result['found']} found, {saved} saved, "
+                f"{result['rejected']} rejected, {result['flagged']} flagged, {result['errors']} errors"
+            )
 
         except Exception as e:
             logger.error(f"Critical error scraping {city_ar}: {e}")
@@ -208,6 +234,13 @@ class ScraperRunner:
         except Exception as e:
             logger.error(f"Error in stale cleanup: {e}")
 
+        # Revalidate existing data (downgrade statistical outliers)
+        try:
+            revalidation = db_manager.revalidate_existing_properties()
+            logger.info(f"Revalidation: {revalidation}")
+        except Exception as e:
+            logger.error(f"Error in revalidation: {e}")
+
         try:
             self.notifier.send_scrape_summary(results)
         except Exception as e:
@@ -239,6 +272,7 @@ def main():
     parser.add_argument('--pages', type=int, default=2, help='Max pages per city per source')
     parser.add_argument('--continuous', action='store_true', help='Run continuously')
     parser.add_argument('--interval', type=int, default=4, help='Hours between runs')
+    parser.add_argument('--cleanup', action='store_true', help='Run data quality cleanup on existing records')
 
     args = parser.parse_args()
 
@@ -248,12 +282,27 @@ def main():
     logger.info(f"Cities: {len(SAUDI_CITIES)}")
     logger.info("=" * 60)
 
+    if args.cleanup:
+        logger.info("Running data quality cleanup...")
+        results = db_manager.cleanup_bad_data()
+        print("\n" + "=" * 60)
+        print("CLEANUP RESULTS")
+        print("=" * 60)
+        for rule, count in results.items():
+            print(f"  {rule}: {count} rows")
+        print("=" * 60)
+        return
+
     runner = ScraperRunner()
 
     if args.city:
         if args.city in SAUDI_CITIES:
             result = runner.scrape_city(args.city, SAUDI_CITIES[args.city], max_pages=args.pages)
-            print(f"\nResults for {args.city}: {result['found']} found, {result['errors']} errors")
+            print(
+                f"\nResults for {args.city}: {result['found']} found, "
+                f"{result['created']} saved, {result['rejected']} rejected, "
+                f"{result['flagged']} flagged, {result['errors']} errors"
+            )
         else:
             print(f"Unknown city: {args.city}")
             print(f"Available: {', '.join(SAUDI_CITIES.keys())}")
@@ -267,14 +316,24 @@ def main():
         print("=" * 60)
 
         total_found = sum(r['found'] for r in results)
+        total_saved = sum(r.get('created', 0) for r in results)
+        total_rejected = sum(r.get('rejected', 0) for r in results)
+        total_flagged = sum(r.get('flagged', 0) for r in results)
         total_errors = sum(r.get('errors', 0) for r in results)
 
         for r in results:
-            status = "OK" if r.get('errors', 0) == 0 else "WARN"
-            print(f"  [{status}] {r.get('city_en', r['city'])}: {r['found']} found, {r.get('errors', 0)} errors")
+            status = "OK" if r.get('errors', 0) == 0 and r.get('rejected', 0) == 0 else "WARN"
+            print(
+                f"  [{status}] {r.get('city_en', r['city'])}: "
+                f"{r['found']} found, {r.get('created', 0)} saved, "
+                f"{r.get('rejected', 0)} rejected, {r.get('flagged', 0)} flagged"
+            )
 
         print("-" * 60)
-        print(f"  Total: {total_found} found, {total_errors} errors")
+        print(
+            f"  Total: {total_found} found, {total_saved} saved, "
+            f"{total_rejected} rejected, {total_flagged} flagged, {total_errors} errors"
+        )
         print("=" * 60)
 
 

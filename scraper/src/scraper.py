@@ -44,6 +44,20 @@ class BaseScraper:
                 return True
         return False
 
+    def _is_likely_rental_price(self, price, property_type: str = 'apartment') -> bool:
+        """Detect if a price looks like a rental price, not a sale price."""
+        if price is None:
+            return False
+        try:
+            price_f = float(price)
+        except (ValueError, TypeError):
+            return False
+        if price_f < 500:
+            return True
+        if price_f < 10_000 and property_type in ('apartment', 'villa', 'building'):
+            return True
+        return False
+
     def _get_random_user_agent(self) -> str:
         user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -166,6 +180,12 @@ class AqarScraper(BaseScraper):
 
             price = data.get('price')
             if not price or price <= 0:
+                return None
+
+            title_text = data.get('title', '')
+            detected_type = self._detect_property_type(title_text)
+            if self._is_likely_rental_price(price, detected_type):
+                logger.debug(f"aqar: Skipping likely rental price ({price} SAR): {title_text[:50]}")
                 return None
 
             imgs = data.get('imgs', [])
@@ -451,6 +471,10 @@ class BayutScraper(BaseScraper):
 
             title = hit.get('title', hit.get('title_l1', 'No Title'))
 
+            if self._is_likely_rental_price(price, self._detect_type(title)):
+                logger.debug(f"bayut: Skipping likely rental price ({price} SAR): {title[:50]}")
+                return None
+
             # Cover photo
             cover = hit.get('coverPhoto', {})
             main_image = cover.get('url', '') if isinstance(cover, dict) else ''
@@ -677,6 +701,13 @@ query Search($search: String!, $city: String, $page: Int, $tag: String) {
                         price = self._parse_price(match.group(1))
                         if price:
                             break
+
+            # Reject likely rental prices
+            if price is not None:
+                prop_type_early = self._detect_type(text)
+                if self._is_likely_rental_price(price, prop_type_early):
+                    logger.debug(f"haraj: Skipping likely rental price ({price} SAR): {title[:50]}")
+                    return None
 
             # Real estate info
             re_info = post.get('realEstateInfo', {}) or {}

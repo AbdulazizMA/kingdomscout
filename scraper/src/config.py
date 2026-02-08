@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     STALE_DELETE_DAYS: int = int(os.getenv('STALE_DELETE_DAYS', '7'))
     STALE_MIN_SCRAPE_CYCLES: int = int(os.getenv('STALE_MIN_SCRAPE_CYCLES', '3'))
 
+    # Data validation
+    VALIDATION_ENABLED: bool = os.getenv('VALIDATION_ENABLED', 'true').lower() == 'true'
+    VALIDATION_FLAG_SCORE_CAP: int = int(os.getenv('VALIDATION_FLAG_SCORE_CAP', '50'))
+
     # Rental yield estimation
     AVG_RENTAL_YIELD_RIYADH: float = 6.5  # Percentage
     AVG_RENTAL_YIELD_JEDDAH: float = 7.0

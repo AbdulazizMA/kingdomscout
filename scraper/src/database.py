@@ -409,4 +409,111 @@ class DatabaseManager:
             conn.close()
 
 
+    def cleanup_bad_data(self) -> dict:
+        """Retroactive cleanup of existing bad data. Returns counts per rule."""
+        conn = self.get_connection()
+        results = {}
+        try:
+            cursor = conn.cursor()
+
+            # Rule 1: Delete properties with rental-level prices (< 10K SAR)
+            cursor.execute("""
+                DELETE FROM properties
+                WHERE status = 'active' AND price < 10000
+            """)
+            results['rental_price_deleted'] = cursor.rowcount
+
+            # Rule 2: Delete apartments with below-threshold prices (< 80K)
+            cursor.execute("""
+                DELETE FROM properties
+                WHERE status = 'active'
+                  AND property_type_id IN (SELECT id FROM property_types WHERE slug = 'apartment')
+                  AND price < 80000
+            """)
+            results['cheap_apartment_deleted'] = cursor.rowcount
+
+            # Rule 3: Flag apartments with > 800 sqm (likely land area)
+            cursor.execute("""
+                UPDATE properties
+                SET admin_notes = 'AUTO_FLAG: apartment size > 800 sqm, likely land area',
+                    investment_score = LEAST(investment_score, 50),
+                    deal_type = CASE WHEN deal_type IN ('hot_deal', 'good_deal') THEN 'fair_price' ELSE deal_type END
+                WHERE status = 'active'
+                  AND property_type_id IN (SELECT id FROM property_types WHERE slug = 'apartment')
+                  AND size_sqm > 800
+            """)
+            results['large_apartment_flagged'] = cursor.rowcount
+
+            # Rule 4: Flag non-land listings with absurdly low price/sqm (< 100)
+            cursor.execute("""
+                UPDATE properties
+                SET admin_notes = 'AUTO_FLAG: price_per_sqm below 100 SAR/sqm',
+                    investment_score = LEAST(investment_score, 50),
+                    deal_type = CASE WHEN deal_type IN ('hot_deal', 'good_deal') THEN 'fair_price' ELSE deal_type END
+                WHERE status = 'active'
+                  AND price_per_sqm IS NOT NULL
+                  AND price_per_sqm < 100
+                  AND (property_type_id IS NULL OR property_type_id NOT IN (SELECT id FROM property_types WHERE slug = 'land'))
+            """)
+            results['low_ppsqm_flagged'] = cursor.rowcount
+
+            # Rule 5: Delete placeholder prices (price <= 1)
+            cursor.execute("""
+                DELETE FROM properties
+                WHERE status = 'active' AND price <= 1
+            """)
+            results['placeholder_price_deleted'] = cursor.rowcount
+
+            conn.commit()
+
+            for rule, count in results.items():
+                logger.info(f"Cleanup rule '{rule}': {count} rows affected")
+
+            return results
+
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error in cleanup_bad_data: {e}")
+            return results
+        finally:
+            conn.close()
+
+    def revalidate_existing_properties(self) -> dict:
+        """Downgrade hot/good deals that are statistical outliers in their district."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                WITH district_stats AS (
+                    SELECT district_id,
+                           PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY price_per_sqm) as p5
+                    FROM properties
+                    WHERE status = 'active' AND price_per_sqm > 0 AND district_id IS NOT NULL
+                    GROUP BY district_id
+                    HAVING COUNT(*) >= 5
+                )
+                UPDATE properties p
+                SET deal_type = 'fair_price',
+                    investment_score = LEAST(investment_score, 50),
+                    admin_notes = COALESCE(admin_notes, '') || ' | AUTO_REVALIDATE: price_per_sqm in bottom 5%% for district'
+                FROM district_stats ds
+                WHERE p.district_id = ds.district_id
+                  AND p.status = 'active'
+                  AND p.price_per_sqm < ds.p5
+                  AND p.deal_type IN ('hot_deal', 'good_deal')
+            """)
+            flagged = cursor.rowcount
+
+            conn.commit()
+            logger.info(f"Revalidation: flagged {flagged} outlier deals")
+            return {'outlier_deals_flagged': flagged}
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error in revalidation: {e}")
+            return {}
+        finally:
+            conn.close()
+
+
 db_manager = DatabaseManager()
