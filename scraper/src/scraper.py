@@ -23,23 +23,27 @@ class BaseScraper:
     RENTAL_KEYWORDS = [
         'للإيجار', 'للايجار', 'إيجار', 'ايجار',
         'شهري', 'يومي', 'for rent', 'for-rent',
+        'monthly', 'daily', 'سنوي', 'annually',
     ]
     SALE_KEYWORDS = [
         'للبيع', 'بيع', 'for sale', 'for-sale',
+        'تمليك', 'ملك',
     ]
 
     def __init__(self):
         self.session = requests.Session()
         self.source_name = "unknown"
+        self._request_count = 0
+        self._last_request_time = 0.0
 
     def _is_rental_listing(self, text: str, url: str = '') -> bool:
         """Check if a listing is a rental based on text content and URL."""
-        combined = f"{text} {url}"
+        combined = self._normalize_arabic(f"{text} {url}")
         if '/for-rent/' in url or '/rent/' in url:
             return True
         for kw in self.RENTAL_KEYWORDS:
-            if kw in combined:
-                if any(sw in combined for sw in self.SALE_KEYWORDS):
+            if self._normalize_arabic(kw) in combined:
+                if any(self._normalize_arabic(sw) in combined for sw in self.SALE_KEYWORDS):
                     return False
                 return True
         return False
@@ -58,13 +62,28 @@ class BaseScraper:
             return True
         return False
 
+    def _normalize_arabic(self, text: str) -> str:
+        """Normalize Arabic text for reliable matching."""
+        if not text:
+            return ''
+        # Remove diacritics (tashkeel)
+        text = re.sub(r'[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]', '', text)
+        # Normalize alef variants to bare alef
+        text = re.sub(r'[أإآٱ]', 'ا', text)
+        # Normalize taa marbuta to ha
+        text = text.replace('ة', 'ه')
+        # Normalize alef maksura to ya
+        text = text.replace('ى', 'ي')
+        return text
+
     def _get_random_user_agent(self) -> str:
         user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
         ]
         return random.choice(user_agents)
 
@@ -92,14 +111,24 @@ class BaseScraper:
             logger.warning(f"Failed to parse price: {price_text} - {e}")
             return None
 
+    def _throttle(self, min_interval: float = 1.0):
+        """Enforce minimum interval between requests to avoid rate limiting."""
+        now = time.time()
+        elapsed = now - self._last_request_time
+        if elapsed < min_interval:
+            time.sleep(min_interval - elapsed + random.uniform(0, 0.5))
+        self._last_request_time = time.time()
+
     def _safe_request(self, url: str, method: str = 'GET', retries: int = 3,
                       headers: Dict = None, json_data: Dict = None,
                       timeout: int = 30) -> Optional[requests.Response]:
+        self._throttle()
         for attempt in range(retries):
             try:
                 req_headers = {
                     'User-Agent': self._get_random_user_agent(),
                     'Accept-Language': 'ar-SA,ar;q=0.9,en;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br',
                 }
                 if headers:
                     req_headers.update(headers)
@@ -107,10 +136,20 @@ class BaseScraper:
                     response = self.session.post(url, headers=req_headers, json=json_data, timeout=timeout)
                 else:
                     response = self.session.get(url, headers=req_headers, timeout=timeout)
+
+                # Handle rate limiting (429) with longer backoff
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 30))
+                    logger.warning(f"Rate limited (429), waiting {retry_after}s: {url}")
+                    time.sleep(retry_after)
+                    continue
+
                 response.raise_for_status()
+                self._request_count += 1
                 return response
             except requests.exceptions.RequestException as e:
-                wait_time = (attempt + 1) * 2 + random.uniform(0, 2)
+                # Exponential backoff with jitter
+                wait_time = min(60, (2 ** attempt) * 2 + random.uniform(0, 3))
                 logger.warning(f"Request failed (attempt {attempt + 1}/{retries}): {url} - {e}")
                 if attempt < retries - 1:
                     time.sleep(wait_time)
@@ -389,182 +428,6 @@ class AqarScraper(BaseScraper):
         return all_listings
 
 
-class BayutScraper(BaseScraper):
-    """Scraper for bayut.sa - uses Algolia Search API directly"""
-
-    ALGOLIA_APP_ID = 'LL8IZ711CS'
-    ALGOLIA_API_KEY = '5b970b39b22a4ff1b99e5167696eef3f'
-    ALGOLIA_INDEX = 'bayut-sa-production-ads-en'
-    ALGOLIA_URL = f'https://{ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes'
-
-    CITY_SLUGS = {
-        'الرياض': 'riyadh', 'جدة': 'jeddah', 'مكة': 'makkah',
-        'المدينة': 'madina', 'الدمام': 'dammam', 'الخبر': 'al-khobar',
-        'تبوك': 'tabuk', 'أبها': 'abha', 'طائف': 'taif',
-        'بريدة': 'buraydah-al-qassim-region', 'حائل': 'hail', 'نجران': 'najran',
-        'الجبيل': 'al-jubail', 'القطيف': 'al-qatif', 'خميس-مشيط': 'khamis-mushait',
-        'ينبع': 'yanbu', 'الظهران': 'dhahran', 'الأحساء': 'al-ahsa',
-        'جازان': 'jazan', 'الباحة': 'al-bahah',
-    }
-
-    def __init__(self):
-        super().__init__()
-        self.source_name = "bayut.sa"
-        self.base_url = "https://www.bayut.sa"
-
-    def _algolia_search(self, city_slug: str, page: int = 0, hits_per_page: int = 24) -> Optional[Dict]:
-        """Query Algolia search API directly"""
-        url = f"{self.ALGOLIA_URL}/{self.ALGOLIA_INDEX}/query"
-        payload = {
-            "query": "",
-            "hitsPerPage": hits_per_page,
-            "page": page,
-            "facetFilters": [
-                [f"location.slug:/{city_slug}"],
-                ["purpose:for-sale"]
-            ]
-        }
-        headers = {
-            'x-algolia-api-key': self.ALGOLIA_API_KEY,
-            'x-algolia-application-id': self.ALGOLIA_APP_ID,
-            'Content-Type': 'application/json',
-        }
-        try:
-            response = self.session.post(url, json=payload, headers=headers, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"bayut.sa Algolia API error: {e}")
-            return None
-
-    def scrape_listings_page(self, city: str, page: int = 1) -> List[Dict[str, Any]]:
-        listings = []
-        city_slug = self.CITY_SLUGS.get(city, city.lower())
-
-        try:
-            # Algolia uses 0-based pages
-            result = self._algolia_search(city_slug, page=page - 1)
-            if not result:
-                return listings
-
-            hits = result.get('hits', [])
-            for hit in hits:
-                listing = self._parse_hit(hit, city)
-                if listing:
-                    listings.append(listing)
-
-            total = result.get('nbHits', 0)
-            logger.info(f"bayut.sa: {len(listings)} listings from page {page} (total: {total})")
-            time.sleep(random.uniform(1, 2))
-        except Exception as e:
-            logger.error(f"Error scraping bayut.sa: {e}")
-        return listings
-
-    def _parse_hit(self, hit: Dict, city: str) -> Optional[Dict[str, Any]]:
-        try:
-            ext_id = str(hit.get('id', hit.get('externalID', '')))
-            if not ext_id:
-                return None
-            price = hit.get('price')
-            if not price or price <= 0:
-                return None
-
-            title = hit.get('title', hit.get('title_l1', 'No Title'))
-
-            if self._is_likely_rental_price(price, self._detect_type(title)):
-                logger.debug(f"bayut: Skipping likely rental price ({price} SAR): {title[:50]}")
-                return None
-
-            # Cover photo
-            cover = hit.get('coverPhoto', {})
-            main_image = cover.get('url', '') if isinstance(cover, dict) else ''
-            image_urls = []
-            if main_image:
-                image_urls.append(main_image)
-            for photo in hit.get('photos', []):
-                if isinstance(photo, dict) and photo.get('url'):
-                    image_urls.append(photo['url'])
-
-            # Location
-            geo = hit.get('geography', {})
-            lat = geo.get('lat') if isinstance(geo, dict) else None
-            lng = geo.get('lng') if isinstance(geo, dict) else None
-
-            # District from location hierarchy
-            district = ''
-            loc_list = hit.get('location', [])
-            if isinstance(loc_list, list) and len(loc_list) > 1:
-                last = loc_list[-1]
-                district = last.get('name', '') if isinstance(last, dict) else str(last)
-
-            slug = hit.get('slug', '')
-            source_url = f"{self.base_url}/{slug}" if slug else f"{self.base_url}/property/details-{ext_id}.html"
-
-            # Area
-            area = hit.get('area')
-            size_sqm = Decimal(str(area)) if area and float(area) > 0 else None
-
-            # Rooms
-            rooms = hit.get('rooms')
-            baths = hit.get('baths')
-
-            return {
-                'external_id': f"bayut-{ext_id}",
-                'source': 'bayut.sa',
-                'source_url': source_url,
-                'title': title,
-                'price': Decimal(str(price)),
-                'size_sqm': size_sqm,
-                'bedrooms': int(rooms) if rooms else None,
-                'bathrooms': int(baths) if baths else None,
-                'city': city,
-                'district': district,
-                'latitude': Decimal(str(lat)) if lat else None,
-                'longitude': Decimal(str(lng)) if lng else None,
-                'description': hit.get('description', hit.get('description_l1', '')),
-                'main_image_url': main_image or None,
-                'image_urls': image_urls[:10],
-                'contact_name': hit.get('contactName', ''),
-                'contact_phone': hit.get('phoneNumber', {}).get('mobile', '') if isinstance(hit.get('phoneNumber'), dict) else '',
-                'property_type': self._detect_type(title),
-                'furnished': hit.get('furnishingStatus') == 'furnished' if hit.get('furnishingStatus') else None,
-                'scraped_at': datetime.now(),
-            }
-        except Exception as e:
-            logger.warning(f"bayut.sa: parse error: {e}")
-            return None
-
-    def _detect_type(self, title: str) -> str:
-        text = title.lower()
-        for keyword, ptype in {
-            'apartment': 'apartment', 'شقة': 'apartment', 'شقق': 'apartment',
-            'villa': 'villa', 'فيلا': 'villa', 'فلل': 'villa',
-            'land': 'land', 'أرض': 'land', 'أراضي': 'land',
-            'building': 'building', 'عمارة': 'building',
-            'office': 'office', 'مكتب': 'office',
-            'shop': 'shop', 'محل': 'shop',
-            'townhouse': 'villa', 'penthouse': 'apartment',
-        }.items():
-            if keyword in text:
-                return ptype
-        return 'apartment'
-
-    def scrape_city(self, city: str, max_pages: int = 3, scrape_details: bool = False) -> List[Dict[str, Any]]:
-        all_listings = []
-        seen_ids = set()
-        logger.info(f"bayut.sa: Starting Algolia scrape for: {city}")
-        for page in range(1, max_pages + 1):
-            page_listings = self.scrape_listings_page(city, page=page)
-            if not page_listings:
-                break
-            for listing in page_listings:
-                if listing['external_id'] not in seen_ids:
-                    seen_ids.add(listing['external_id'])
-                    all_listings.append(listing)
-        logger.info(f"bayut.sa: Total for {city}: {len(all_listings)}")
-        return all_listings
-
-
 class HarajScraper(BaseScraper):
     """Scraper for haraj.com.sa - uses GraphQL API directly"""
 
@@ -817,11 +680,9 @@ class MultiSourceScraper:
 
     def __init__(self, sources: List[str] = None):
         self.scrapers = {}
-        enabled = sources or ['aqar.fm', 'bayut.sa', 'haraj.com.sa']
+        enabled = sources or ['aqar.fm', 'haraj.com.sa']
         if 'aqar.fm' in enabled:
             self.scrapers['aqar.fm'] = AqarScraper()
-        if 'bayut.sa' in enabled:
-            self.scrapers['bayut.sa'] = BayutScraper()
         if 'haraj.com.sa' in enabled:
             self.scrapers['haraj.com.sa'] = HarajScraper()
         logger.info(f"MultiSourceScraper: {list(self.scrapers.keys())}")

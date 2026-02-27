@@ -120,6 +120,12 @@ def validate_listing(listing: Dict[str, Any]) -> Tuple[ValidationResult, List[st
     if size is not None:
         size_f = float(size)
 
+        # Hard reject anything over 1800 sqm (except land)
+        if size_f > 1800 and prop_type != 'land':
+            return ValidationResult.REJECT, [
+                f"Size {size_f:.0f} sqm exceeds 1800 sqm absolute limit"
+            ]
+
         type_min_size = MIN_SIZE.get(prop_type, MIN_SIZE_DEFAULT)
         if size_f < type_min_size:
             reasons.append(f"Size {size_f:.0f} sqm below {prop_type} minimum {type_min_size}")
@@ -174,6 +180,24 @@ def validate_listing(listing: Dict[str, Any]) -> Tuple[ValidationResult, List[st
         if float(price) > 500_000:
             reasons.append(f"{prop_type} with 0 bedrooms and {float(price):.0f} SAR price")
             result = ValidationResult.FLAG
+
+    # ── Rule 6: Villa priced like apartment ──
+    if prop_type == 'villa' and price is not None and float(price) < 150_000:
+        return ValidationResult.REJECT, [
+            f"Villa priced at {float(price):.0f} SAR (unrealistically low)"
+        ]
+
+    # ── Rule 7: Bedroom count sanity ──
+    if bedrooms is not None and bedrooms > 20:
+        return ValidationResult.REJECT, [
+            f"Unrealistic bedroom count: {bedrooms}"
+        ]
+
+    # ── Rule 8: Building age sanity ──
+    building_age = listing.get('building_age_years')
+    if building_age is not None and (building_age < 0 or building_age > 100):
+        reasons.append(f"Unrealistic building age: {building_age} years")
+        result = ValidationResult.FLAG
 
     return result, reasons
 
